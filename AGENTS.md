@@ -20,18 +20,28 @@ Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
 
 **这是最关键的问题。** exploit 需要覆盖被释放的内核栈，且该栈必须在用户空间可控。
 
-- Pixel 10 能利用是因为 pselect 的 `stack_fds` 正好和 `rt_waiter` 在内核栈上重合
+- Pixel 10 能成功是因为 pselect 的 `stack_fds` 正好和 `rt_waiter` 在内核栈上重合
 - **简单适配偏移是不可能成功的！** 如果目标内核的栈布局不重合，或重合但不可控，必须找其他可控内核栈的系统调用
 
 **已验证失败的方法 (OPPO Find N2):**
 
 | 方法 | 结果 | 原因 |
 |------|------|------|
-| pselect (NFDS=384) | fd_set 在 stack_top-0x1f8 | 差距 352B，无法到达 waiter |
+| pselect (NFDS=384) | fd_set 在 stack_top-0x1f8 | 差距 208B，无法到达 waiter |
 | pselect (NFDS=1024) | fd_set 在堆上 | 不在栈上 |
 | binder ioctl | EACCES | shell 用户无权限 |
-| process_vm_readv | 帧仅 160B | 太浅，差距 696B |
+| process_vm_readv | 帧仅 160B | 太浅，差距 552B |
 | PR_SET_MM_MAP | EPERM | Android 阻止 |
+
+**关键帧大小 (vmlinux 验证):**
+
+| 函数 | 帧大小 |
+|------|--------|
+| __arm64_sys_futex | 0x70 (112B) |
+| do_futex | 0x130 (304B) |
+| futex_wait_requeue_pi | 0x1a0 (416B) |
+| **总栈深** | **0x340 (832B)** |
+| **waiter 距栈顶** | **0x2c8 (712B)** |
 
 ### 2. 结构体差异
 
@@ -72,8 +82,8 @@ Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
 ## Key gotchas
 
 - **`TARGET_CONFIG_H` is mandatory** — `offset.h` errors without it. Pass as a `-D` string literal.
-- **Server vmlinux frame sizes are WRONG** — use boot-2.img extracted kernel for frame analysis. `do_futex` frame: 0x1c0 (448B) on device vs 0x130 (304B) on server.
-- **KASLR bypass (slide) is blocked** — all 20+ stamp methods failed. Waiter is at `stack_top - 0x358`, no syscall writes user-controlled data at that offset.
+- **Server vmlinux frame sizes were WRONG** — Previous values (sys_futex=0x10, do_futex=0x1c0) were incorrect. Actual values from OPPO kernel vmlinux: sys_futex=0x70, do_futex=0x130. All frame analysis must use the compiled vmlinux.
+- **KASLR bypass (slide) is blocked** — Waiter is at `stack_top - 0x2c8` (712B), no syscall writes user-controlled data at that offset. This is the main blocker.
 - **Firefox 151 required** — CVE-2026-10702 only exists in version 151.0.
 
 ## Architecture notes

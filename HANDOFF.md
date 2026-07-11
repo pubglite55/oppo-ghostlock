@@ -35,22 +35,22 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 
 ---
 
-## 2. CRITICAL: Waiter Position Analysis (boot-2.img Verified)
+## 2. CRITICAL: Waiter Position Analysis (vmlinux Verified)
 
-### Frame Sizes (from boot-2.img extracted kernel, NOT server vmlinux)
+### Frame Sizes (from OPPO kernel source compiled vmlinux, pahole/objdump verified)
 
 | Function | Frame Size | Source |
 |----------|-----------|--------|
-| sys_futex | 0x10 (16B) | STP X29,X30,[SP,#-0x10]! |
-| do_futex | 0x1c0 (448B) | SUB SP,SP,#0x1c0 |
+| __arm64_sys_futex | 0x70 (112B) | SUB SP,SP,#0x70 |
+| do_futex | 0x130 (304B) | SUB SP,SP,#0x130 |
 | futex_wait_requeue_pi | 0x1a0 (416B) | SUB SP,SP,#0x1a0 |
-| **Total futex chain** | **0x3d0 (976B)** | |
-| **Waiter距栈顶** | **0x358 (856B)** | 0x3d0 - 0x78 |
+| **Total futex chain** | **0x340 (832B)** | |
+| **Waiter距栈顶** | **0x2c8 (712B)** | 0x340 - 0x78 |
 
-### ⚠️ IMPORTANT: Server vmlinux frame sizes are WRONG
-- Server do_futex: 0x130 (304B) vs boot-2.img: **0x1c0 (448B)** — 144B difference!
-- Server sys_futex: 0x70 (112B) vs boot-2.img: **0x10 (16B)** — 96B difference!
-- **ALL frame size analysis must use boot-2.img extracted kernel**
+### ⚠️ IMPORTANT: Previous frame sizes were WRONG
+- Previous do_futex: 0x1c0 (448B) vs actual: **0x130 (304B)** — 144B difference!
+- Previous sys_futex: 0x10 (16B) vs actual: **0x70 (112B)** — 96B difference!
+- **Frame sizes verified from OPPO kernel source compiled vmlinux using objdump**
 
 ### pselect Chain Analysis
 | Function | Frame Size |
@@ -61,12 +61,12 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 | **Total** | **0x610 (1552B)** |
 
 - fd_set data位置: stack_top - 0x1f8 (504B) — 在 core_sys_select 帧内 SP+0x68
-- waiter位置: stack_top - 0x358 (856B) — 在 do_select 帧内
-- **差距: 352B — fd_set 无法触及 waiter**
+- waiter位置: stack_top - 0x2c8 (712B) — 在 do_select 帧内
+- **差距: 208B — fd_set 无法触及 waiter**
 - do_select 在 waiter 位置 (SP+0x298) 没有任何数据写入
 
 ### Key Constraint
-**The issue is NOT just total chain depth — it's WHERE user-controlled data lands.** Even with deep chain (pselect=1552B), if user data is at wrong offset (0x1f8 vs 0x358), it doesn't help. Need a syscall where user-controlled data is placed at stack_top - 0x358 specifically.
+**The issue is NOT just total chain depth — it's WHERE user-controlled data lands.** Even with deep chain (pselect=1552B), if user data is at wrong offset (0x1f8 vs 0x2c8), it doesn't help. Need a syscall where user-controlled data is placed at stack_top - 0x2c8 specifically.
 
 ---
 

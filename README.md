@@ -14,32 +14,29 @@
 
 | 阶段 | 状态 | 说明 |
 |------|------|------|
-| KernelSnitch mm_struct leak | ✅ 完成 | 修复 futex_hashsize 后成功泄漏 mm_struct |
+| 所有偏移验证 | ✅ 完成 | vmlinux + pahole 双重验证 |
+| KernelSnitch mm_struct leak | ❌ 阻塞 | KPTI 启用导致时序不准确 |
 | GhostLock FUTEX PI 触发 | ✅ 完成 | 3 futex words + 3 threads → -EDEADLK |
-| 所有结构体偏移验证 | ✅ 完成 | 45 个 pahole 偏移 + 18 个 nm 符号偏移全部正确 |
 | **KASLR bypass (slide)** | ❌ **阻塞** | **无 syscall 在 waiter 位置写入用户可控数据** |
 | pipe 物理读写 | ⏳ 待测 | 依赖 KASLR bypass |
 | 提权 (cred + SELinux) | ⏳ 待测 | 依赖 pipe physrw |
 
 ### 核心阻塞问题
 
-**waiter 位置**: `stack_top - 0x358` (856B) — 从 boot-2.img 提取的内核精确验证
+**waiter 位置**: `stack_top - 0x2c8` (712B) — 从 vmlinux objdump 精确验证
 
-需要一个 syscall 在 `stack_top - 0x358` 处写入用户可控数据。已测试的所有 stack reclaim 方法均失败：
+需要一个 syscall 在 `stack_top - 0x2c8` 处写入用户可控数据。已测试的所有 stack reclaim 方法均失败：
 
 | 方法 | 结果 | 差距 |
 |------|------|------|
-| pselect (NFDS=384) | fd_set 在 stack_top-0x1f8 | 差 352B |
+| pselect (NFDS=384) | fd_set 在 stack_top-0x1f8 | 差 208B |
 | pselect (NFDS=1024) | fd_set 在堆上 (kvmalloc) | 不在栈上 |
 | binder ioctl | EACCES (errno=13) | shell 用户无权限 |
-| process_vm_readv | 帧仅 160B | 差 696B |
+| process_vm_readv | 帧仅 160B | 差 552B |
 | PR_SET_MM_MAP | EPERM | Android 阻止 |
-| setsockopt MCAST | EADDRNOTAVAIL | IPv6 限制 |
-| keyctl | EOPNOTSUPP | 不支持 |
-| timerfd | ENOSYS | seccomp 阻止 |
 
 > [!NOTE]
-> NebuSec 表示下一篇 Android GhostLock blog 将讨论 Android 上的 stack reclaim 和 ASLR bypass 方法。
+> NebuSec 已确认将在下一篇 Android blog 中讨论 Android 上的 stack reclaim 和 ASLR bypass 方法。详见 [IonStack Part II](https://nebusec.ai/research/ionstack-part-2/)。
 
 ## 设备信息
 
@@ -50,7 +47,7 @@
 | 内核 | Linux 5.10.236-android12-9 GKI |
 | Android | 16 |
 | Build | PGU110_16.0.5.1001(CN01) |
-| CONFIG_NR_CPUS | 32 (possible=0-7, online=6) |
+| CONFIG_NR_CPUS | 32 (possible=0-7, online=8) |
 | CONFIG_FUTEX_PI | y |
 | CONFIG_UNMAP_KERNEL_AT_EL0 | y (KPTI enabled) |
 
@@ -60,71 +57,50 @@
 
 `remove_waiter()` 清除 `current->pi_blocked_on` 而非 `waiter->task->pi_blocked_on`。在 proxy 路径中，`current` 是 requeuer 而非 waiter，导致 waiter 的 `pi_blocked_on` 变成悬空指针。
 
-### 帧大小分析 (boot-2.img 提取内核)
+### 帧大小分析 (vmlinux objdump 验证)
 
 | 函数 | 帧大小 | 来源 |
 |------|--------|------|
-| sys_futex | 0x10 (16B) | STP X29,X30,[SP,#-0x10]! |
-| do_futex | 0x1c0 (448B) | SUB SP,SP,#0x1c0 |
+| __arm64_sys_futex | 0x70 (112B) | SUB SP,SP,#0x70 |
+| do_futex | 0x130 (304B) | SUB SP,SP,#0x130 |
 | futex_wait_requeue_pi | 0x1a0 (416B) | SUB SP,SP,#0x1a0 |
-| **总 futex 链** | **0x3d0 (976B)** | |
-| **waiter 距栈顶** | **0x358 (856B)** | 0x3d0 - 0x78 |
+| **总 futex 链** | **0x340 (832B)** | |
+| **waiter 距栈顶** | **0x2c8 (712B)** | 0x340 - 0x78 |
 
-> ⚠️ **注意**: 服务器编译的 vmlinux 帧大小与设备不匹配！do_futex: 服务器=0x130 vs 设备=**0x1c0**。所有分析必须以 boot-2.img 提取内核为准。
+> [!WARNING]
+> 之前的帧大小是错误的！sys_futex: 旧=0x10 vs 实际=**0x70**，do_futex: 旧=0x1c0 vs 实际=**0x130**。所有帧大小分析必须使用 OPPO 内核源码编译的 vmlinux。
 
-### pselect 链分析
+### SLUB 分配器参数 (pahole 验证)
 
-| 函数 | 帧大小 |
-|------|--------|
-| sys_pselect6 | 0x90 (144B) |
-| core_sys_select | 0x1d0 (464B) |
-| do_select | 0x390 (912B) |
-| **总计** | **0x610 (1552B)** |
+| 参数 | 值 | 验证方法 |
+|------|-----|----------|
+| MM_STRUCT_SZ | 0x3c0 (960B) | pahole: 952B + 8B cpu_bitmap |
+| MM_ORDER | 3 | SLUB order 计算: 32KB slabs |
+| objects_per_slab | 34 | 32768 / 960 = 34 |
+| futex_hashsize | 2048 | 8 CPUs * 256 |
 
-- fd_set 位置: stack_top - 0x1f8 (504B) — 在 core_sys_select 帧内 SP+0x68
-- waiter 位置: stack_top - 0x358 (856B) — 在 do_select 帧内
-- **差距: 352B — fd_set 无法触及 waiter**
-- do_select 在 waiter 位置 (SP+0x298) 没有任何数据写入
+## 快速开始
 
-## 文件结构
+### 环境要求
 
+| 组件 | 版本 | 用途 |
+|------|------|------|
+| Android NDK | r29 | 交叉编译 exploit |
+| ADB | 37.0+ | Android 调试 |
+| Python | 3.8+ | 服务器脚本 |
+| 目标设备 | OPPO Find N2 | exploit 目标 |
+
+### 安装依赖
+
+```bash
+# macOS
+brew install --cask android-ndk
+brew install android-platform-tools
+
+# 验证安装
+$NDK_PATH/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang --version
+adb version
 ```
-oppo-ghostlock/
-├── README.md                          # 本文件
-├── AGENTS.md                          # AI Agent 指南
-├── HANDOFF.md                         # 会话交接文档
-├── TROUBLESHOOTING.md                 # 问题排查手册
-├── FAQ.md                             # 常见问题
-├── CONTRIBUTING.md                    # 贡献指南
-├── CHANGELOG.md                       # 版本更新日志
-├── exploit/                           # exploit 源代码与构建
-│   ├── Makefile                       # 构建脚本
-│   ├── src/                           # 源代码
-│   │   ├── main.c                     # 主入口
-│   │   ├── util.c                     # KernelSnitch 设置与工具函数
-│   │   ├── slide.c                    # KASLR bypass
-│   │   ├── fops.c                     # file_operations 利用
-│   │   ├── pipe.c                     # pipe 物理读写
-│   │   ├── root.c                     # root 提权
-│   │   ├── preload.c                  # LD_PRELOAD 入口
-│   │   ├── su_daemon.c               # su 守护进程
-│   │   ├── su_blob.S                  # su 二进制嵌入
-│   │   ├── wallpaper_blob.S           # wallpaper 嵌入
-│   │   ├── common.h                   # 公共定义与偏移
-│   │   └── kernelsnitch/              # KernelSnitch 库
-│   ├── targets/oppo-find_n2/          # 设备特定配置
-│   │   └── target.h                   # 内核偏移量
-│   └── test-programs/                 # 测试程序
-│       ├── test_binder.c
-│       ├── test_futex.c
-│       └── ...
-├── analysis-scripts/                  # 分析脚本
-├── docs/                              # 文档
-├── exploit-server/                    # exploit 服务器
-└── extract-vmlinux                    # vmlinux 提取工具
-```
-
-## 编译与部署
 
 ### 编译 exploit
 
@@ -157,12 +133,96 @@ adb shell "chmod 755 /data/local/tmp/preload.so"
 adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
 ```
 
+### 验证成功
+
+成功后会显示：
+```
+[+] preload starting pid=...
+[+] startup context pid=... uid=0(root)
+```
+
+## 仓库目录结构
+
+```
+oppo-ghostlock/
+├── README.md                          # 本文件
+├── AGENTS.md                          # AI Agent 指南
+├── HANDOFF.md                         # 会话交接文档
+├── TROUBLESHOOTING.md                 # 问题排查手册
+├── FAQ.md                             # 常见问题
+├── CONTRIBUTING.md                    # 贡献指南
+├── CHANGELOG.md                       # 版本更新日志
+├── exploit/                           # exploit 源代码与构建
+│   ├── Makefile                       # 构建脚本
+│   ├── .gitignore                     # 构建产物忽略
+│   ├── src/                           # 源代码
+│   │   ├── main.c                     # 主入口
+│   │   ├── util.c                     # KernelSnitch 设置与工具函数
+│   │   ├── slide.c                    # KASLR bypass (process_vm_readv)
+│   │   ├── fops.c                     # file_operations 利用
+│   │   ├── pipe.c                     # pipe 物理读写
+│   │   ├── root.c                     # root 提权
+│   │   ├── preload.c                  # LD_PRELOAD 入口
+│   │   ├── su_daemon.c               # su 守护进程
+│   │   ├── su_blob.S                  # su 二进制嵌入
+│   │   ├── wallpaper_blob.S           # wallpaper 嵌入
+│   │   ├── common.h                   # 公共定义与偏移
+│   │   └── kernelsnitch/              # KernelSnitch 库
+│   │       ├── kernelsnitch.h
+│   │       ├── futex_hash.h           # futex 哈希 (已修复)
+│   │       ├── utils.h
+│   │       └── timeutils.h
+│   ├── targets/oppo-find_n2/          # 设备特定配置
+│   │   └── target.h                   # 内核偏移量 (pahole 验证)
+│   └── test-programs/                 # 测试程序
+│       ├── test_binder.c
+│       ├── test_futex.c
+│       ├── test_mcast.c
+│       ├── test_pselect_nfds.c
+│       ├── test_reclaim.c
+│       ├── test_seccomp_futex.c
+│       ├── test_stamp.c
+│       ├── test_leak_mm.c             # mm_struct 泄漏方法测试
+│       └── test_kernel_leak.c         # 内核信息泄漏测试
+├── analysis-scripts/                  # 分析脚本
+│   ├── find_deep_chains*.py           # 内核调用链分析
+│   ├── inspect_elf.py                 # ELF 格式检查
+│   ├── inspect_text.py                # .text 段检查
+│   └── diagnose_callgraph.py          # 调用图诊断
+├── docs/                              # 文档
+│   ├── architecture.md
+│   ├── setup.md
+│   ├── best-practice.md
+│   ├── knowledge-notes.md
+│   └── adaptation-guide.md            # 适配指南
+├── exploit-server/                    # exploit 服务器
+│   ├── CVE-2026-10702/                # Firefox exploit
+│   └── log_server.py                  # 日志服务器
+└── extract-vmlinux                    # vmlinux 提取工具
+```
+
+## 文档导航
+
+| 文档 | 说明 |
+|------|------|
+| [AGENTS.md](AGENTS.md) | AI Agent 指南 |
+| [HANDOFF.md](HANDOFF.md) | 会话交接文档 |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 问题排查手册 |
+| [FAQ.md](FAQ.md) | 常见问题 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
+| [docs/architecture.md](docs/architecture.md) | 架构设计文档 |
+| [docs/setup.md](docs/setup.md) | 环境搭建与部署 |
+| [docs/best-practice.md](docs/best-practice.md) | 开发最佳实践 |
+| [docs/knowledge-notes.md](docs/knowledge-notes.md) | 技术知识沉淀 |
+| [docs/adaptation-guide.md](docs/adaptation-guide.md) | 适配指南 |
+
 ## 下一步计划
 
 1. **等待 NebuSec Android blog** — 他们将讨论 Android 上的 stack reclaim 和 ASLR bypass
-2. **尝试 io_uring** — 可能有更深的调用链和用户可控数据
-3. **nfsetsockopt** — Netfilter setsockopt 可能有不同的栈布局
-4. **寻找 CAP_SYS_PTRACE helper** — 用 PR_SET_MM_MAP
+2. **寻找替代 mm_struct 泄漏方法** — 当前 KernelSnitch 因 KPTI 失败
+3. **尝试 io_uring** — 可能有更深的调用链和用户可控数据
+4. **nfsetsockopt** — Netfilter setsockopt 可能有不同的栈布局
 
 ## 参考资料
 
@@ -177,4 +237,4 @@ adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
 
 ## License
 
-Apache License 2.0
+GPL License

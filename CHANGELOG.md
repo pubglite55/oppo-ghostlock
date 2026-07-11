@@ -1,5 +1,39 @@
 # 版本更新日志
 
+## v0.4.0 (2026-07-12)
+
+### ✨ 新增功能
+- 添加 Makefile 自动构建脚本 (NDK 自动检测)
+- 添加 mm_struct 泄漏方法测试程序 (test_leak_mm.c)
+- 添加内核信息泄漏测试程序 (test_kernel_leak.c)
+- 添加适配指南文档 (docs/adaptation-guide.md)
+- 添加 AI Agent 指南 (AGENTS.md)
+
+### 🐛 问题修复
+- 修正 INIT_TASK_OFF 偏移 (0x027cbf60 → 0x027cc000)
+- 修正帧大小 (vmlinux objdump 验证):
+  - __arm64_sys_futex: 0x10 → 0x70 (112B)
+  - do_futex: 0x1c0 → 0x130 (304B)
+- 修正 waiter 位置: stack_top - 0x358 → stack_top - 0x2c8 (712B)
+- 修复 KernelSnitch futex_hashsize:
+  - 使用 _SC_NPROCESSORS_CONF 替代 _SC_NPROCESSORS_ONLN
+  - 结果: 2048 (8 CPUs * 256)
+
+### 🐛 验证确认
+- MM_STRUCT_SZ = 0x3c0 (960B) — pahole 验证
+- MM_ORDER = 3 — SLUB 计算验证
+- objects_per_slab = 34 — 32KB / 960B
+
+### ⚡ 性能优化
+- 合并源码目录 (删除 exploit-src/)
+- 优化构建流程 (Makefile 自动化)
+
+### 📝 文档更新
+- 更新 README.md (修正帧大小和 waiter 位置)
+- 更新 HANDOFF.md (修正所有偏移值)
+- 更新 AGENTS.md (添加关键帧大小表)
+- 更新 slide.c 注释 (修正 waiter 位置)
+
 ## v0.3.0 (2026-07-10)
 
 ### ✨ 新增功能

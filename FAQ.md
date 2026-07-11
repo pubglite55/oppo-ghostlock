@@ -8,7 +8,7 @@
 
 ### Q: 需要 root 权限吗？
 
-**A**: 不需要。exploit 通过 Firefox 漏洞获取初始代码执行，然后通过内核漏洞提权。
+**A**: exploit 本身不需要 root，但某些信息泄漏方法需要 root 权限。当前 KernelSnitch 失败是因为 KPTI 启用。
 
 ### Q: 会损坏设备吗？
 
@@ -28,9 +28,9 @@
 
 ### Q: 如何添加新设备支持？
 
-**A**: 
+**A**:
 1. 获取设备的 boot.img
-2. 编译内核获取 vmlinux
+2. 从 OPPO 内核源码编译 vmlinux (需要 DWARF 调试信息)
 3. 使用 pahole 提取偏移
 4. 更新 `exploit/targets/<device>/target.h`
 
@@ -40,11 +40,12 @@
 ```bash
 pahole -C task_struct vmlinux
 pahole -C cred vmlinux
+pahole -C mm_struct vmlinux
 ```
 
 ### Q: MM_STRUCT_SZ 和 MM_ORDER 如何确定？
 
-**A**: 
+**A**:
 - MM_STRUCT_SZ: 从 pahole 获取 mm_struct 大小，加上 cpumask_size()
 - MM_ORDER: 使用 SLUB calculate_order 计算
 
@@ -52,13 +53,43 @@ pahole -C cred vmlinux
 
 **A**: macOS 开发机使用 Android NDK 交叉编译。内核编译需要 Linux 服务器。
 
+### Q: 帧大小为什么之前是错的？
+
+**A**: 之前的帧大小是从服务器编译的 vmlinux 获取的，但服务器 vmlinux 与设备实际内核不匹配。正确的方法是从 OPPO 内核源码编译 vmlinux，然后用 objdump 验证。
+
+### Q: 如何验证帧大小？
+
+**A**: 使用 objdump 反汇编 vmlinux：
+```bash
+aarch64-linux-gnu-objdump -d vmlinux | grep -A 5 "<do_futex>:"
+# 查找 SUB SP, SP, #imm 指令
+```
+
 ---
 
 ## 部署类
 
+### Q: 如何编译 exploit？
+
+**A**:
+```bash
+cd exploit
+make                    # 自动检测 NDK
+make NDK=/path/to/ndk  # 指定 NDK 路径
+```
+
+### Q: 如何部署到设备？
+
+**A**:
+```bash
+adb push preload.so /data/local/tmp/
+adb shell "chmod 755 /data/local/tmp/preload.so"
+adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
+```
+
 ### Q: 服务器需要什么配置？
 
-**A**: 
+**A**:
 - Python 3.8+
 - 端口 8080 (exploit 服务器)
 - 端口 8081 (日志服务器)
@@ -70,20 +101,11 @@ pahole -C cred vmlinux
 
 ### Q: exploit 失败后如何调试？
 
-**A**: 
+**A**:
 1. 查看 `http://<开发机IP>:8081` 日志
 2. 检查 KernelSnitch 输出
 3. 验证偏移是否正确
 4. 检查 seccomp 状态
-
-### Q: 如何更新 exploit？
-
-**A**: 
-```bash
-git pull origin main
-NDK=~/Library/Android/android-ndk-r29
-# 重新编译
-```
 
 ---
 
@@ -97,10 +119,14 @@ NDK=~/Library/Android/android-ndk-r29
 
 **A**: GhostLock (CVE-2026-43499) 是 rtmutex 栈 UAF 漏洞，通过 FUTEX PI 操作触发。
 
-### Q: 为什么 seccomp 会阻止 exploit？
+### Q: 为什么 KernelSnitch 失败？
 
-**A**: Firefox 的 seccomp 沙箱阻止了 GhostLock 需要的 FUTEX PI 操作。
+**A**: 因为 KPTI 启用 (CONFIG_UNMAP_KERNEL_AT_EL0=y)，导致时序侧信道不准确。cntvct_el0 精度不足，PMCCNTR_EL0 需要内核权限。
 
-### Q: 如何绕过 seccomp 限制？
+### Q: waiter 位置是多少？
 
-**A**: 需要使用替代技术，如 PR_SET_MM_MAP 回收栈帧，或修改 seccomp 过滤器。
+**A**: `stack_top - 0x2c8` (712B)，从 vmlinux objdump 验证。
+
+### Q: 为什么需要等 NebuSec blog？
+
+**A**: NebuSec 已确认将在下一篇 Android blog 中讨论 Android 上的 stack reclaim 和 ASLR bypass 方法。这是当前最可行的方向。

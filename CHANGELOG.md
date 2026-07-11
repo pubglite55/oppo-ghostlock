@@ -6,6 +6,9 @@
 - 添加 Makefile 自动构建脚本 (NDK 自动检测)
 - 添加 mm_struct 泄漏方法测试程序 (test_leak_mm.c)
 - 添加内核信息泄漏测试程序 (test_kernel_leak.c)
+- 添加 Cache-based 时序攻击测试 (test_cache_timing.c)
+- 添加改进时序测量测试 (test_improved_timing.c)
+- 添加辅助向量泄漏测试 (test_auxv_leak.c)
 - 添加适配指南文档 (docs/adaptation-guide.md)
 - 添加 AI Agent 指南 (AGENTS.md)
 
@@ -23,6 +26,14 @@
 - MM_STRUCT_SZ = 0x3c0 (960B) — pahole 验证
 - MM_ORDER = 3 — SLUB 计算验证
 - objects_per_slab = 34 — 32KB / 960B
+
+### 🧪 测试结果
+- Cache-based 时序: 失败 (cntvct_el0 精度不足 24MHz)
+- 改进时序测量: 失败 (变异系数 106.95%)
+- 辅助向量泄漏: 失败 (无内核地址)
+- PMCCNTR_EL0: 失败 (需要内核权限)
+- /proc/kallsyms: 失败 (kptr_restrict 启用)
+- /proc/self/pagemap: 失败 (全零)
 
 ### ⚡ 性能优化
 - 合并源码目录 (删除 exploit-src/)

@@ -4,42 +4,84 @@
 
 Security research project exploiting GhostLock (CVE-2026-43499), a Linux kernel stack UAF via FUTEX_CMP_REQUEUE_PI race. Targets OPPO Find N2 (CPH2413, SM8475, kernel 5.10.236). The exploit chain: Firefox 151 CVE-2026-10702 → preload.so (LD_PRELOAD) → KernelSnitch (mm_struct leak) → GhostLock trigger → pipe physrw → root.
 
-## Build (cross-compile for Android ARM64)
-
-No Makefile exists. Build is a single clang invocation:
+## Build
 
 ```bash
-NDK=/tmp/ndk_extract/android-ndk-r29
-CC=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang
-SYSROOT=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
 cd exploit/
-
-$CC --target=aarch64-linux-android35 --sysroot=$SYSROOT \
-  -I. -Isrc -Itargets/oppo-find_n2 \
-  -O2 -fPIC -shared \
-  -DTARGET_CONFIG_H='"targets/oppo-find_n2/target.h"' \
-  src/main.c src/util.c src/slide.c src/fops.c src/pipe.c src/root.c \
-  src/preload.c src/su_blob.S src/wallpaper_blob.S \
-  -pthread -o preload.so
+make                    # 自动检测 NDK
+make NDK=/path/to/ndk   # 指定 NDK 路径
 ```
 
-Output: `preload.so` (2.3MB shared library). Deploy via `adb push` + `LD_PRELOAD`.
+Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
+
+## ⚠️ 关键适配要求 (Critical Adaptation Requirements)
+
+### 1. 栈覆盖必须用户可控
+
+**这是最关键的问题。** exploit 需要覆盖被释放的内核栈，且该栈必须在用户空间可控。
+
+- Pixel 10 能利用是因为 pselect 的 `stack_fds` 正好和 `rt_waiter` 在内核栈上重合
+- **简单适配偏移是不可能成功的！** 如果目标内核的栈布局不重合，或重合但不可控，必须找其他可控内核栈的系统调用
+
+**已验证失败的方法 (OPPO Find N2):**
+
+| 方法 | 结果 | 原因 |
+|------|------|------|
+| pselect (NFDS=384) | fd_set 在 stack_top-0x1f8 | 差距 352B，无法到达 waiter |
+| pselect (NFDS=1024) | fd_set 在堆上 | 不在栈上 |
+| binder ioctl | EACCES | shell 用户无权限 |
+| process_vm_readv | 帧仅 160B | 太浅，差距 696B |
+| PR_SET_MM_MAP | EPERM | Android 阻止 |
+
+### 2. 结构体差异
+
+- **5 系内核 vs 6 系内核**: `rt_mutex_waiter`、`task_struct` 等结构体布局不同
+- **mm_struct 地址偏移**: 不同机型和内核版本必须用 pahole 精确提取
+- **不能假设偏移相同** — 即使是同一主线版本，不同厂商的配置也可能不同
+
+### 3. 适配难度评估
+
+| 内核类型 | 适配难度 | 说明 |
+|----------|----------|------|
+| 同主线版本 | 低 | 改函数和结构偏移即可 |
+| 同主线 + 相同配置 | 中 | 需要验证栈布局 |
+| 非同主线版本 | **高** | 需要重新分析栈覆盖方法 |
+| 厂商深度定制 | **极高** | 几乎需要重写 |
+
+### 4. 建议的适配流程
+
+1. **先完成栈覆盖验证**
+   - 实现可控 panic，确认栈覆盖位置
+   - 分析目标内核的系统调用栈布局
+   - 找到用户可控数据能到达 waiter 位置的 syscall
+
+2. **验证结构体偏移**
+   - 从目标设备提取 vmlinux
+   - 用 pahole 提取所有结构体偏移
+   - 验证 mm_struct 地址泄漏
+
+3. **测试 GhostLock 触发**
+   - 确保 FUTEX_CMP_REQUEUE_PI 能正确触发
+   - 验证悬空 pi_blocked_on 指针
+
+4. **完成提权链**
+   - pipe 物理读写
+   - cred 结构体修补
+   - SELinux 绕过
 
 ## Key gotchas
 
 - **`TARGET_CONFIG_H` is mandatory** — `offset.h` errors without it. Pass as a `-D` string literal.
-- **Two `exploit/src/` dirs exist**: `exploit/src/` (compiled) and `exploit-src/` (reference/older). Always edit `exploit/src/`.
 - **Server vmlinux frame sizes are WRONG** — use boot-2.img extracted kernel for frame analysis. `do_futex` frame: 0x1c0 (448B) on device vs 0x130 (304B) on server.
-- **KASLR bypass (slide) is blocked** — all 20+ stamp methods failed. Waiter is at `stack_top - 0x358`, no syscall writes user-controlled data at that offset. This is the main blocker.
-- **GhostLock trigger does NOT work in standalone tests** — FUTEX_WAIT_REQUEUE_PI returns ETIMEDOUT immediately. Wrong synchronization: CMP_REQUEUE_PI fires after WAIT returns, not while blocked.
+- **KASLR bypass (slide) is blocked** — all 20+ stamp methods failed. Waiter is at `stack_top - 0x358`, no syscall writes user-controlled data at that offset.
 - **Firefox 151 required** — CVE-2026-10702 only exists in version 151.0.
 
 ## Architecture notes
 
 - **No CI, no linter, no tests** — pure research repo
 - **Target-specific offsets** live in `exploit/targets/oppo-find_n2/target.h` (201 lines of #defines, all pahole-verified)
-- **KernelSnitch** uses futex hash collisions + ashmem to leak mm_struct. Fixed `futex_hash.h` to use `_SC_NPROCESSORS_CONF` (not `_SC_ONLN`) with `roundup_pow_of_two`.
-- **Analysis scripts** in `analysis-scripts/` — `find_deep_chains*.py` for kernel call chain analysis, `inspect_elf.py` / `inspect_text.py` for binary inspection
+- **KernelSnitch** uses futex hash collisions + ashmem to leak mm_struct
+- **Analysis scripts** in `analysis-scripts/` — kernel call chain analysis
 - **Test programs** in `test-programs/` — standalone tests for futex, binder, pselect, reclaim, seccomp
 
 ## Project status
@@ -49,7 +91,7 @@ Output: `preload.so` (2.3MB shared library). Deploy via `adb push` + `LD_PRELOAD
 | KernelSnitch mm_struct leak | Working |
 | SKB payload preparation | Working |
 | GhostLock FUTEX PI trigger | Fails (ETIMEDOUT, wrong sync) |
-| KASLR bypass (slide) | Blocked (no stamp reaches waiter) |
+| KASLR bypass (slide) | **Blocked** (no syscall reaches waiter position) |
 | pipe physrw | Pending (depends on KASLR) |
 | root (cred + SELinux) | Pending (depends on KASLR) |
 

@@ -91,49 +91,36 @@
 ```
 oppo-ghostlock/
 ├── README.md                          # 本文件
+├── AGENTS.md                          # AI Agent 指南
 ├── HANDOFF.md                         # 会话交接文档
 ├── TROUBLESHOOTING.md                 # 问题排查手册
 ├── FAQ.md                             # 常见问题
 ├── CONTRIBUTING.md                    # 贡献指南
 ├── CHANGELOG.md                       # 版本更新日志
-├── exploit-src/                       # exploit 源代码
-│   ├── main.c                         # 主入口
-│   ├── util.c                         # KernelSnitch 设置与工具函数
-│   ├── slide.c                        # KASLR bypass (当前使用 process_vm_readv)
-│   ├── fops.c                         # file_operations 利用
-│   ├── pipe.c                         # pipe 物理读写
-│   ├── root.c                         # root 提权
-│   ├── preload.c                      # LD_PRELOAD 入口
-│   ├── common.h                       # 公共定义与偏移
-│   ├── futex_test.h                   # FUTEX 测试
-│   └── kernelsnitch/
-│       ├── kernelsnitch.h             # KernelSnitch 核心
-│       ├── futex_hash.h               # futex 哈希 (已修复)
-│       ├── utils.h                    # 工具函数
-│       └── timeutils.h                # 时序工具
+├── exploit/                           # exploit 源代码与构建
+│   ├── Makefile                       # 构建脚本
+│   ├── src/                           # 源代码
+│   │   ├── main.c                     # 主入口
+│   │   ├── util.c                     # KernelSnitch 设置与工具函数
+│   │   ├── slide.c                    # KASLR bypass
+│   │   ├── fops.c                     # file_operations 利用
+│   │   ├── pipe.c                     # pipe 物理读写
+│   │   ├── root.c                     # root 提权
+│   │   ├── preload.c                  # LD_PRELOAD 入口
+│   │   ├── su_daemon.c               # su 守护进程
+│   │   ├── su_blob.S                  # su 二进制嵌入
+│   │   ├── wallpaper_blob.S           # wallpaper 嵌入
+│   │   ├── common.h                   # 公共定义与偏移
+│   │   └── kernelsnitch/              # KernelSnitch 库
+│   ├── targets/oppo-find_n2/          # 设备特定配置
+│   │   └── target.h                   # 内核偏移量
+│   └── test-programs/                 # 测试程序
+│       ├── test_binder.c
+│       ├── test_futex.c
+│       └── ...
 ├── analysis-scripts/                  # 分析脚本
-│   ├── find_deep_chains*.py           # 内核调用链分析
-│   ├── inspect_elf.py                 # ELF 格式检查
-│   ├── inspect_text.py                # .text 段检查
-│   └── diagnose_callgraph.py          # 调用图诊断
-├── test-programs/                     # 测试程序
-│   ├── test_binder.c                  # binder ioctl 测试
-│   ├── test_futex.c                   # FUTEX PI 测试
-│   ├── test_mcast.c                   # setsockopt MCAST 测试
-│   ├── test_pselect_nfds.c            # pselect NFDS 测试
-│   ├── test_reclaim.c                 # stack reclaim 方法测试
-│   ├── test_seccomp_futex.c           # seccomp + futex 测试
-│   └── test_stamp.c                   # NebuSec PoC stamp 方法测试
 ├── docs/                              # 文档
-│   ├── architecture.md
-│   ├── setup.md
-│   ├── best-practice.md
-│   └── knowledge-notes.md
 ├── exploit-server/                    # exploit 服务器
-│   ├── CVE-2026-10702/                # Firefox exploit
-│   └── log_server.py                  # 日志服务器
-├── kernel_extracted/                  # 内核源文件参考
-├── CyberMeowfia-main/                # CyberMeowfia 原始代码
 └── extract-vmlinux                    # vmlinux 提取工具
 ```
 
@@ -142,11 +129,17 @@ oppo-ghostlock/
 ### 编译 exploit
 
 ```bash
+cd exploit
+
+# 使用 Makefile (推荐)
+make                    # 自动检测 NDK 路径
+make NDK=/path/to/ndk  # 指定 NDK 路径
+
+# 或手动编译
 NDK=/tmp/ndk_extract/android-ndk-r29
 CC=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang
 SYSROOT=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
 
-cd exploit-src
 $CC --target=aarch64-linux-android35 --sysroot=$SYSROOT \
   -I. -Isrc -Itargets/oppo-find_n2 \
   -O2 -fPIC -shared \

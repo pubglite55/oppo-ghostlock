@@ -1,6 +1,6 @@
 # GhostLock OPPO Find N2 Exploit — Session Handoff
 
-**Date**: 2026-07-11  
+**Date**: 2026-07-12 (Updated)  
 **Device**: OPPO Find N2 (SM8475/CPH2413), Android 16, Kernel 5.10.236  
 **Project**: https://github.com/pubglite55/oppo-ghostlock/
 
@@ -8,134 +8,161 @@
 
 ## 1. Executive Summary
 
-GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at KASLR bypass (slide mechanism)**. The blocker is finding a syscall that writes user-controlled data at the correct kernel stack position to overlap with the forged waiter.
+GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at two critical points**:
+1. **KernelSnitch mm_struct leak fails** — KPTI enabled, timing side-channel inaccurate
+2. **KASLR bypass blocked** — No syscall writes user-controlled data at waiter position
 
-### What Works
+### Current Status
+
 | Component | Status | Notes |
 |-----------|--------|-------|
-| IDA Pro 9.3 + MCP | ✅ Installed | macOS x64, patched, MCP configured |
-| KernelSnitch mm_struct leak | ✅ Working | Fixed futex_hashsize (use _SC_NPROCESSORS_CONF) |
-| SKB payload preparation | ✅ Working | order-3 slab, 32KB pages |
-| GhostLock FUTEX PI trigger | ✅ Working | 3 futex words, 3 threads, -EDEADLK |
-| KASLR bypass (slide) | ❌ BLOCKED | **No syscall writes user data at waiter position** |
+| 偏移验证 | ✅ 完成 | vmlinux objdump + pahole 双重验证 |
+| MM_STRUCT_SZ / MM_ORDER | ✅ 已确认 | 0x3c0 / 3 (pahole 验证) |
+| futex_hashsize | ✅ 已修复 | 2048 (8 CPUs * 256) |
+| KernelSnitch 碰撞查找 | ✅ 工作 | 找到 3 个碰撞 |
+| **KernelSnitch mm_struct 泄漏** | ❌ **阻塞** | **KPTI 导致时序不准确** |
+| GhostLock FUTEX PI 触发 | ✅ 工作 | 3 futex words + 3 threads → -EDEADLK |
+| **KASLR bypass (slide)** | ❌ **阻塞** | **无 syscall 在 waiter 位置写入用户可控数据** |
+| pipe 物理读写 | ⏳ 待测 | 依赖 KASLR bypass |
+| 提权 (cred + SELinux) | ⏳ 待测 | 依赖 pipe physrw |
 
-### What Failed (Stack Reclaim Methods)
-| Method | Result | Root Cause |
-|--------|--------|------------|
-| pselect (NFDS=384) | EBADF, no overlap | fd_set at stack_top-0x1f8, waiter at stack_top-0x358 (352B gap) |
-| pselect (NFDS=1024) | EBADF, no overlap | fd_set on heap (kvmalloc), not on stack |
-| binder ioctl | EACCES (errno=13) | Shell user has no permission to /dev/binder |
-| process_vm_readv | OK but no overlap | Frame only 160B, too shallow |
-| PR_SET_MM_MAP | EPERM | Android blocks this |
-| setsockopt MCAST | EADDRNOTAVAIL | IPv6 multicast restricted |
-| keyctl | EOPNOTSUPP | Not supported |
-| timerfd_create | ENOSYS | Blocked by seccomp |
-| prefetch side-channel | All 0 cycles | KPTI enabled (CONFIG_UNMAP_KERNEL_AT_EL0=y) |
-| /proc/kallsyms | Permission denied | kptr_restrict enforced |
+### 核心阻塞问题
+
+**问题 1: KernelSnitch mm_struct 泄漏失败**
+- 原因: KPTI 启用 (`CONFIG_UNMAP_KERNEL_AT_EL0=y`)，cntvct_el0 精度不足 (24MHz)
+- 影响: 无法获取 mm_struct 地址，后续 exploit 无法进行
+
+**问题 2: waiter 位置无法到达**
+- waiter 位置: `stack_top - 0x2c8` (712B)
+- 已测试的所有 stack reclaim 方法均失败
+- 差距: pselect fd_set 在 stack_top-0x1f8，差距 208B
 
 ---
 
-## 2. CRITICAL: Waiter Position Analysis (vmlinux Verified)
+## 2. 偏移验证结果 (vmlinux Verified)
 
-### Frame Sizes (from OPPO kernel source compiled vmlinux, pahole/objdump verified)
+### 帧大小 (OPPO 内核源码编译 vmlinux, objdump 验证)
 
-| Function | Frame Size | Source |
-|----------|-----------|--------|
+| 函数 | 帧大小 | 来源 |
+|------|--------|------|
 | __arm64_sys_futex | 0x70 (112B) | SUB SP,SP,#0x70 |
 | do_futex | 0x130 (304B) | SUB SP,SP,#0x130 |
 | futex_wait_requeue_pi | 0x1a0 (416B) | SUB SP,SP,#0x1a0 |
-| **Total futex chain** | **0x340 (832B)** | |
-| **Waiter距栈顶** | **0x2c8 (712B)** | 0x340 - 0x78 |
+| **总 futex 链** | **0x340 (832B)** | |
+| **waiter 距栈顶** | **0x2c8 (712B)** | 0x340 - 0x78 |
 
-### ⚠️ IMPORTANT: Previous frame sizes were WRONG
-- Previous do_futex: 0x1c0 (448B) vs actual: **0x130 (304B)** — 144B difference!
-- Previous sys_futex: 0x10 (16B) vs actual: **0x70 (112B)** — 96B difference!
-- **Frame sizes verified from OPPO kernel source compiled vmlinux using objdump**
+### ⚠️ 重要: 之前的帧大小是错误的
 
-### pselect Chain Analysis
-| Function | Frame Size |
-|----------|-----------|
+| 函数 | 旧值 | 新值 | 差异 |
+|------|------|------|------|
+| sys_futex | 0x10 (16B) | 0x70 (112B) | +96B |
+| do_futex | 0x1c0 (448B) | 0x130 (304B) | -144B |
+| waiter 位置 | stack_top-0x358 | stack_top-0x2c8 | -144B |
+
+### SLUB 分配器参数 (pahole 验证)
+
+| 参数 | 值 | 验证方法 |
+|------|-----|----------|
+| MM_STRUCT_SZ | 0x3c0 (960B) | pahole: 952B + 8B cpu_bitmap |
+| MM_ORDER | 3 | SLUB order 计算: 32KB slabs |
+| objects_per_slab | 34 | 32768 / 960 = 34 |
+| futex_hashsize | 2048 | 8 CPUs * 256 |
+
+### pselect 链分析
+
+| 函数 | 帧大小 |
+|------|--------|
 | sys_pselect6 | 0x90 (144B) |
 | core_sys_select | 0x1d0 (464B) |
-| do_select | 0x390 (912B) — STP 0x60 + SUB 0x330 |
-| **Total** | **0x610 (1552B)** |
+| do_select | 0x390 (912B) |
+| **总计** | **0x610 (1552B)** |
 
-- fd_set data位置: stack_top - 0x1f8 (504B) — 在 core_sys_select 帧内 SP+0x68
-- waiter位置: stack_top - 0x2c8 (712B) — 在 do_select 帧内
+- fd_set 位置: stack_top - 0x1f8 (504B)
+- waiter 位置: stack_top - 0x2c8 (712B)
 - **差距: 208B — fd_set 无法触及 waiter**
-- do_select 在 waiter 位置 (SP+0x298) 没有任何数据写入
-
-### Key Constraint
-**The issue is NOT just total chain depth — it's WHERE user-controlled data lands.** Even with deep chain (pselect=1552B), if user data is at wrong offset (0x1f8 vs 0x2c8), it doesn't help. Need a syscall where user-controlled data is placed at stack_top - 0x2c8 specifically.
 
 ---
 
-## 3. Files & Locations
+## 3. 测试结果汇总
 
-### Local Machine (macOS)
+### 已测试的方法
+
+| 方法 | 结果 | 原因 |
+|------|------|------|
+| Cache-based 时序 | ❌ 失败 | cntvct_el0 精度不足 (24MHz, 每 tick 42ns) |
+| 改进时序测量 | ❌ 失败 | 变异系数 106.95%，不稳定 |
+| 辅助向量泄漏 | ❌ 失败 | 无内核地址，仅用户态地址 |
+| PMCCNTR_EL0 | ❌ 失败 | 需要内核权限，用户态无法访问 |
+| /proc/kallsyms | ❌ 失败 | kptr_restrict 启用，所有地址为 0 |
+| /proc/self/pagemap | ❌ 失败 | 全零，内核限制物理页信息 |
+| ASHMEM | ❌ 失败 | Permission denied (SELinux) |
+| userfaultfd | ❌ 失败 | Operation not permitted (seccomp) |
+| fork 时序 | ❌ 失败 | 精度太低 (1077μs/次) |
+
+### KernelSnitch 碰撞查找
+
+```
+[*] KS: sz=0x3c0 order=3 cpu=8
+[*] KS: ORDER3=0x8000 objs_per_slab=34
+[*] parameters cpu (16) mm_struct sz (3c0) mm slab order (3) thread cnt (8) collisions (4) mte disabled
+[*] futex_init: nprocs_conf=8 nprocs_onln=8 futex_hashsize=2048
+[*] start finding collisisons
+[*] found 3 collisisons
+[*] start bruteforcing
+[*] done
+[-] KernelSnitch mm_struct leak failed
+```
+
+**结论**: 碰撞查找成功，但暴力搜索 64GB 地址空间未找到 mm_struct。
+
+---
+
+## 4. 文件与位置
+
+### 本地机器 (macOS)
 ```
 /Users/xiuxiu391/Desktop/oppo/
-├── boot-2.img              — Original boot image (192MB) ★ AUTHORITATIVE SOURCE
-├── vmlinux.elf             — Extracted kernel ELF (46MB, .text at 0x0)
-├── vmlinux.gz              — Compressed kernel
-├── extract-vmlinux         — Kernel extraction script
-├── exploit/
-│   ├── src/
-│   │   ├── main.c          — Entry point, seccomp/FUTEX PI test
-│   │   ├── util.c          — KernelSnitch setup, SKB payload, configfs R/W
-│   │   ├── slide.c         — KASLR bypass (currently process_vm_readv, needs update)
-│   │   ├── fops.c          — Fake fops, CFI stage
-│   │   ├── pipe.c          — Pipe buffer physical R/W
-│   │   ├── root.c          — Privilege escalation
-│   │   ├── preload.c       — LD_PRELOAD entry
-│   │   ├── common.h        — MM_STRUCT_SZ=0x3c0, MM_ORDER=3
-│   │   └── kernelsnitch/   — KernelSnitch library
-│   │       ├── kernelsnitch.h
-│   │       ├── futex_hash.h  — MODIFIED: fixed futex_hashsize
-│   │       └── utils.h
-│   ├── targets/oppo-find_n2/target.h — All kernel offsets
-│   └── preload.so          — Compiled exploit (2.3MB)
-└── test_reclaim.c, test_binder.c, test_mcast.c — Test programs
+├── oppo-ghostlock/                    — 项目仓库
+│   ├── exploit/
+│   │   ├── Makefile                   — 构建脚本
+│   │   ├── src/
+│   │   │   ├── main.c                 — 主入口
+│   │   │   ├── util.c                 — KernelSnitch 设置
+│   │   │   ├── slide.c                — KASLR bypass
+│   │   │   ├── fops.c                 — file_operations 利用
+│   │   │   ├── pipe.c                 — pipe 物理读写
+│   │   │   ├── root.c                 — root 提权
+│   │   │   ├── preload.c              — LD_PRELOAD 入口
+│   │   │   ├── common.h               — 公共定义
+│   │   │   └── kernelsnitch/          — KernelSnitch 库
+│   │   ├── targets/oppo-find_n2/      — 设备特定配置
+│   │   │   └── target.h               — 内核偏移量
+│   │   └── test-programs/             — 测试程序
+│   └── docs/                          — 文档
+├── boot.img                           — 原始 boot 镜像 (192MB)
+└── kernel_raw.bin                     — 提取的内核二进制
 ```
 
-### Server (43.139.246.47, user: ubuntu, key: ~/Downloads/11.pem)
+### 服务器 (43.139.246.47)
 ```
-~/boot-oppo.img              — Copy of boot-2.img (uploaded)
-~/vmlinux-oppo.elf           — Raw ELF from boot-2.img (3 symbols only)
-~/vmlinux-kernel.bin         — Extracted PE/COFF kernel (stripped, objdumpable)
-~/vmlinux-kernel.gz          — (empty/failed extraction)
 ~/android_kernel_oppo_sm8475-oppo-sm8475_b_16.0.0_find_n2/
-    └── vmlinux              — Compiled kernel with symbols (WRONG frame sizes!)
+    └── vmlinux                        — 编译的内核 (410MB, 有符号)
+~/boot-new.img                         — 上传的 boot.img
+~/kernel-from-boot.bin                 — 从 boot.img 提取的内核
 ```
-
-### IDA Pro
-- **Location**: /Applications/IDA_Pro_9.3/
-- **Plugin**: ~/.idapro/plugins/ida_mcp.py
-- **MCP Config**: ~/.config/mimocode/mimocode.json
-- **IDA Database**: /Users/xiuxiu391/Desktop/oppo/vmlinux.elf.i64
-- **Note**: IDA database has imagebase=0x0, functions not named, but disassembly works
 
 ---
 
-## 4. Compile & Deploy Commands
+## 5. 编译与部署
 
-### Compile
+### 编译
 ```bash
-NDK=/tmp/ndk_extract/android-ndk-r29
-CC=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang
-SYSROOT=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
-cd /Users/xiuxiu391/Desktop/oppo/exploit
-
-$CC --target=aarch64-linux-android35 --sysroot=$SYSROOT \
-  -I. -Isrc -Itargets/oppo-find_n2 \
-  -O2 -fPIC -shared \
-  -DTARGET_CONFIG_H='"targets/oppo-find_n2/target.h"' \
-  src/main.c src/util.c src/slide.c src/fops.c src/pipe.c src/root.c \
-  src/preload.c src/su_blob.S src/wallpaper_blob.S \
-  -pthread -o preload.so
+cd exploit/
+make                    # 自动检测 NDK
+make NDK=/path/to/ndk  # 指定 NDK 路径
 ```
 
-### Deploy & Run
+### 部署
 ```bash
 adb push preload.so /data/local/tmp/
 adb shell "chmod 755 /data/local/tmp/preload.so"
@@ -144,108 +171,95 @@ adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
 
 ---
 
-## 5. What Was Tried and Failed
+## 6. 关键技术细节
 
-### KernelSnitch futex_hashsize Fix (SUCCESS)
-- **Problem**: CONFIG_NR_CPUS=32, possible=0-7, online=6. Kernel uses num_possible_cpus()=8, but user-space used sysconf(_SC_NPROCESSORS_ONLN)=6.
-- **Fix**: In `futex_hash.h`, changed `futex_init()` to use `_SC_NPROCESSORS_CONF` with `roundup_pow_of_two`.
-- **Result**: KernelSnitch now finds mm_struct successfully.
+### GhostLock 漏洞 (CVE-2026-43499)
+- `remove_waiter()` 清除 `current->pi_blocked_on` 而非 `waiter->task->pi_blocked_on`
+- 影响 Linux 2.6.39 到 7.1，需要 CONFIG_FUTEX_PI=y
+- 触发: 3 futex words + 3 threads → PI 依赖循环 → -EDEADLK → 错误回滚
 
-### Binder ioctl Approach (FAILED)
-- **Problem**: errno=13 (EACCES) — shell user has no permission to /dev/binder
-- **Result**: Completely blocked on Android
+### KPTI 对时序的影响
 
-### pselect Approach (FAILED)
-- **Problem**: fd_set data at stack_top-0x1f8, waiter at stack_top-0x358
-- **Gap**: 352B — fd_set cannot reach waiter
-- **NFDS=1024**: fd_set moved to heap (kvmalloc), not on stack
-- **NFDS=320**: waiter in output area (res_ex), user can't control it
+KPTI (Kernel Page-Table Isolation) 启用后:
+- 用户态和内核态使用不同页表
+- 每次系统调用需要切换页表
+- 引入不可预测的时序抖动
+- cntvct_el0 (24MHz) 精度不足，无法检测微小差异
 
-### process_vm_readv Approach (FAILED)
-- **Problem**: Frame only 160B (sys 0x10 + process_vm_rw 0x90)
-- **Gap**: 696B — way too shallow
+### 为什么 PMCCNTR_EL0 无法使用
 
----
-
-## 6. Key Technical Details
-
-### GhostLock Vulnerability (CVE-2026-43499)
-- `remove_waiter()` clears `current->pi_blocked_on` instead of `waiter->task->pi_blocked_on`
-- Affects Linux 2.6.39 to 7.1, requires CONFIG_FUTEX_PI=y
-- Trigger: 3 futex words + 3 threads → PI dependency cycle → -EDEADLK → buggy rollback
-
-### Slide Mechanism
-1. KernelSnitch leaks mm_struct address
-2. SKB payload placed at page_base with fake waiter data
-3. GhostLock creates dangling pi_blocked_on pointer
-4. **BLOCKED HERE**: Stack reclaim syscall needed to place fake waiter at pi_blocked_on location
-5. setpriority triggers PI chain walk → writes to boot_id
-6. Read /proc/sys/kernel/random/boot_id → leak kernel base
-
-### Boot Image Analysis
-- Android boot image header v4, kernel at offset 0x1000
-- Kernel is PE/COFF ARM64 format (not raw gzip)
-- extract-vmlinux fails on this format
-- Use: `python3 -c "..." ` to extract kernel from boot image
+PMCCNTR_EL0 是 CPU 周期计数器，精度高 (GHz 级别)，但:
+- 需要内核权限 (PMUSERENR_EL0)
+- 用户态无法直接访问
+- Android SELinux 阻止
 
 ---
 
-## 7. What Needs to Be Done Next
+## 7. 下一步计划
 
-### Priority 1: Find the Right Stack Reclaim Method
-The core problem is finding a syscall that writes user-controlled data at **stack_top - 0x358** (856B from kernel stack top).
+### 优先级 1: 等待 NebuSec Android blog
 
-**Candidate approaches to try:**
-1. **nfsetsockopt** — Netfilter setsockopt may have deeper call chain with user data at right offset
-2. **io_uring_setup** — Checked: only 272B total, not deep enough
-3. **PR_SET_MM_MAP with CAP_SYS_PTRACE helper** — Need helper with elevated privileges
-4. **Brute-force NFDS values** — Test NFDS=320 (fd_set on stack, waiter at res_ex) to see if any value makes waiter land in input area
-5. **Wait for NebuSec Android blog** — They explicitly said "next blog will discuss how to exploit GhostLock on Android"
+NebuSec 已确认将在下一篇 Android blog 中讨论:
+- Android 上的 stack reclaim 方法
+- ASLR bypass 技术
+- CFI bypass 方法
 
-### Priority 2: If Stack Reclaim Found
-1. Implement in slide.c
-2. Compile and test on device
-3. Verify boot_id leak (should be kernel base address)
+来源: https://nebusec.ai/research/ionstack-part-2/
 
-### Priority 3: Complete Exploit Chain
-Once KASLR bypass works:
-1. pipe.c — Physical R/W via pipe buffer
-2. fops.c — Fake fops, CFI bypass
-3. root.c — Privilege escalation (patch cred + SELinux)
+### 优先级 2: 如果 Stack Reclaim 找到
 
----
+1. 实现到 slide.c
+2. 编译并在设备上测试
+3. 验证 boot_id 泄漏 (应该是内核基地址)
 
-## 8. Suggested Skills
+### 优先级 3: 完成 Exploit 链
 
-- **diagnosing-bugs** — Debug why stack reclaim methods fail
-- **deep-research** — Research Android binder/stack reclaim internals
-- **super-research** — Mode: experiment loop — systematically test different NFDS values and stack reclaim methods
+KASLR bypass 完成后:
+1. pipe.c — pipe buffer 物理读写
+2. fops.c — 伪造 fops, CFI bypass
+3. root.c — 提权 (patch cred + SELinux)
 
 ---
 
-## 9. NebuSec Writeup Reference
+## 8. NebuSec 参考资料
 
-The official GhostLock writeup is at: https://nebusec.ai/research/ionstack-part-2/
+官方 GhostLock writeup: https://nebusec.ai/research/ionstack-part-2/
 
-Key insights from the writeup:
-- On x86 Linux: uses PR_SET_MM_MAP for stack reclaim (EPERM on Android)
-- Uses prefetch for KASLR leak (KPTI off, but KPTI is ON on our device)
-- Uses CEA (CPU Entry Area) for controlled memory at known address (x86 only, not ARM64)
-- Uses inet6_protos[IPPROTO_UDP] as write target
-- **They explicitly said**: "next blog will discuss how to exploit GhostLock on Android, reclaiming stack frame, bypassing both ASLR and CFI"
+关键要点:
+- x86 Linux: 使用 PR_SET_MM_MAP 回收栈帧 (Android 上被 EPERM)
+- 使用 prefetch 进行 KASLR 泄漏 (KPTI 关闭，但我们的设备 KPTI 启用)
+- 使用 CEA (CPU Entry Area) 在已知地址放置可控内存 (x86 专用，ARM64 没有)
+- 使用 inet6_protos[IPPROTO_UDP] 作为写入目标
+- **他们明确表示**: "next blog will discuss how to exploit GhostLock on Android"
 - PoC: https://github.com/NebuSec/CyberMeowfia/blob/main/IonStack/CVE-2026-43499/poc/poc.c
 
-Their PoC tests 8 stack reclaim methods including pselect, process_vm, setsockopt, keyctl, timerfd+fcntl, and futex operations. The pselect method uses NFDS=256 which is different from our approach.
-
 ---
 
-## 10. Device Info
+## 9. 设备信息
 
 - **Phone**: OPPO Find N2, serial=84cb96e2
 - **USB**: Connected via adb
 - **Kernel**: 5.10.236-android12-9-o-g74d132f4467a
 - **Build fingerprint**: OPPO/CPH2413/CPH2413:16/UP1A.231005.007/V16.0.12.0.UNFCNXM:user/release-keys
-- **CONFIG_NR_CPUS=32**, possible=0-7, online=6
+- **CONFIG_NR_CPUS=32**, possible=0-7, online=8
 - **CONFIG_FUTEX_PI=y** ✓
 - **CONFIG_UNMAP_KERNEL_AT_EL0=y** (KPTI enabled)
 - **kptr_restrict enforced** (/proc/kallsyms denied)
+
+---
+
+## 10. 测试程序
+
+| 程序 | 用途 |
+|------|------|
+| test_futex.c | FUTEX PI 操作测试 |
+| test_binder.c | binder ioctl 测试 |
+| test_pselect_nfds.c | pselect NFDS 测试 |
+| test_reclaim.c | stack reclaim 方法测试 |
+| test_seccomp_futex.c | seccomp + futex 测试 |
+| test_stamp.c | NebuSec PoC stamp 方法测试 |
+| test_leak_mm.c | mm_struct 泄漏方法测试 |
+| test_kernel_leak.c | 内核信息泄漏测试 |
+| test_cache_timing.c | Cache-based 时序攻击测试 |
+| test_improved_timing.c | 改进时序测量测试 |
+| test_auxv_leak.c | 辅助向量泄漏测试 |

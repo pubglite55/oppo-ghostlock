@@ -1,5 +1,36 @@
 # 版本更新日志
 
+## v0.5.0 (2026-07-12)
+
+### ✨ 新增功能
+- GhostLock 触发验证: FUTEX_CMP_REQUEUE_PI ret=1 ✅
+- C ashmem 类型验证: ashmem_area 312 bytes ✅
+- configfs_bin_file_operations 找到: bin_buffer at +88 ✅
+- ashmem UUID 路径支持: `/dev/ashmem874642ac-...` ✅
+- 问题描述文档: 完整问题描述 (发给大佬求助) ✅
+
+### 🐛 问题修复
+- 修正帧大小: sys_futex=0x90 (非0x70), do_futex=0x70 (非0x130), do_select=0x3C0 (非0x390)
+- 修正 waiter 位置: stack_top-0x288 (非0x2c8)
+- 修正 ANON_PIPE_BUF_OPS_OFF: 0x0216aa68 (非0x0216a9c8)
+- 修正 SLIDE_NFULNL_LOGGER_OFF: 0x027c14b8 (非0x027c1418)
+- 修正 ASHMEM_FOPS_OFF: 0x02c0048 (非0x022bffa8)
+
+### 📝 文档更新
+- 更新 README.md: 添加 GhostLock 验证成功状态
+- 更新 AGENTS.md: 添加 C ashmem 和 configfs 发现
+- 更新 HANDOFF.md: 添加 IDA 分析结果
+- 新增 问题描述.md: 完整问题描述 (发给大佬求助)
+- 新增 docs/architecture.md: 架构设计文档
+- 新增 docs/setup.md: 环境搭建文档
+- 新增 docs/best-practice.md: 最佳实践文档
+- 新增 docs/knowledge-notes.md: 技术知识沉淀
+- 更新 TROUBLESHOOTING.md: 添加 GhostLock 时序问题
+- 更新 FAQ.md: 添加 C ashmem 和帧大小问题
+- 更新 CHANGELOG.md: 本文件
+
+---
+
 ## v0.4.0 (2026-07-12)
 
 ### ✨ 新增功能
@@ -27,84 +58,52 @@
 - MM_ORDER = 3 — SLUB 计算验证
 - objects_per_slab = 34 — 32KB / 960B
 
-### 🧪 测试结果
-- Cache-based 时序: 失败 (cntvct_el0 精度不足 24MHz)
-- 改进时序测量: 失败 (变异系数 106.95%)
-- 辅助向量泄漏: 失败 (无内核地址)
-- PMCCNTR_EL0: 失败 (需要内核权限)
-- /proc/kallsyms: 失败 (kptr_restrict 启用)
-- /proc/self/pagemap: 失败 (全零)
-
-### ⚡ 性能优化
-- 合并源码目录 (删除 exploit-src/)
-- 优化构建流程 (Makefile 自动化)
-
 ### 📝 文档更新
-- 更新 README.md (修正帧大小和 waiter 位置)
-- 更新 HANDOFF.md (修正所有偏移值)
-- 更新 AGENTS.md (添加关键帧大小表)
-- 更新 slide.c 注释 (修正 waiter 位置)
+- 添加 README.md: 项目概述和快速开始
+- 添加 CONTRIBUTING.md: 贡献指南
+- 添加 TROUBLESHOOTING.md: 问题排查手册
+- 添加 FAQ.md: 常见问题
+- 添加 docs/architecture.md: 架构设计
+- 添加 docs/setup.md: 环境搭建
+- 添加 docs/knowledge-notes.md: 技术知识沉淀
 
-## v0.3.0 (2026-07-10)
+---
+
+## v0.3.0 (2026-07-11)
 
 ### ✨ 新增功能
-- 添加实时日志服务器 (log_server.py)
-- 添加 exploit.html 日志上传功能
-- 添加 seccomp/FUTEX PI 测试代码
+- 添加 analysis-scripts/: 内核调用链分析脚本
+- 添加 test-programs/: 测试程序集
+- 添加 extract-vmlinux: vmlinux 提取工具
 
 ### 🐛 问题修复
-- 修复 KernelSnitch MM_STRUCT_SZ 偏移 (0x500 → 0x3c0)
-- 修复 MM_ORDER 计算 (验证为 order=3)
-- 添加 page_base 检查防止崩溃
-- 修复 Firefox 152 降级安装问题
-
-### ⚡ 性能优化
-- 优化 KernelSnitch verbose 输出
-- 添加详细的调试日志
+- 修正 KIMAGE_TEXT_BASE: 0xffffffc008000000 (39-bit VA)
+- 修正 P0_PAGE_OFFSET: 0xffffffc000000000
 
 ### 📝 文档更新
-- 添加完整的项目文档体系
-- 添加问题排查手册
-- 添加架构设计文档
+- 添加 HANDOFF.md: 会话交接文档
+- 添加 CHANGELOG.md: 版本更新日志
+
+---
 
 ## v0.2.0 (2026-07-10)
 
 ### ✨ 新增功能
-- 添加 FUTEX PI 操作测试
-- 添加 seccomp 状态检测
-- 添加详细的 KernelSnitch 日志
+- 初始 exploit 框架
+- KernelSnitch 集成
+- GhostLock 触发代码
+- pselect KASLR bypass 代码
 
-### 🐛 问题修复
-- 修复内核编译缺失 vendor/o 目录
-- 修复缺失的 Kconfig 文件
-- 修复 cc-wrapper.c forbidden warning
-- 修复 CONFIG_WERROR 编译失败
-- 修复 mmget_still_valid 未定义错误
+### 🐛 已知问题
+- KernelSnitch mm_struct 泄漏失败 (KPTI)
+- pselect fd_set 在堆上 (非栈上)
+- KASLR bypass 阻塞
 
-### ⚡ 性能优化
-- 优化 KernelSnitch 参数配置
-- 添加 MM_STRUCT_SZ 和 MM_ORDER 验证
-
-### 📝 文档更新
-- 添加环境搭建文档
-- 添加问题排查指南
+---
 
 ## v0.1.0 (2026-07-10)
 
 ### ✨ 新增功能
-- 初始 exploit 实现
-- Firefox exploit (CVE-2026-10702) 集成
-- KernelSnitch mm_struct 泄漏
-- Slide/pselect KASLR 绕过
-- GhostLock (CVE-2026-43499) 触发
-- Pipe Physical R/W
-- Root privilege escalation
-
-### 🐛 已知问题
-- Firefox seccomp 沙箱阻止 FUTEX PI 操作
-- OPPO 设备需要特殊偏移配置
-- 部分内核编译问题需要手动修复
-
-### 📝 文档
-- 添加项目 README
-- 添加快速开始指南
+- 项目初始化
+- 仓库结构搭建
+- 基本文档

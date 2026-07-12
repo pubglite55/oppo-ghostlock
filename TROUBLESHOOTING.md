@@ -2,202 +2,210 @@
 
 ## 文档说明
 
-本文档收录了在 GhostLock OPPO Find N2 exploit 开发和测试过程中遇到的所有问题及其解决方案。
+本文档收录了 OPPO Find N2 GhostLock exploit 开发过程中遇到的所有问题及其解决方案。
 
-**检索方式**: 按问题类型分类，每类下按出现频率排序
-**使用建议**: 遇到问题时先搜索关键词，找到对应问题后按步骤排查
+**检索方式**: 按问题类型分类，每条问题包含触发场景、报错信息、排查思路和解决方案。
 
 ---
 
 ## 环境搭建类
 
-### 1. Android NDK 安装失败
+### Q: NDK 路径找不到
 
-**触发场景**: 下载 NDK 时网络超时
-**报错信息**: 连接超时或下载中断
-**解决方案**: 使用 Homebrew 安装
-```bash
-brew install --cask android-ndk
+**触发场景**: 运行 `make` 时提示 NDK 未找到
+
+**完整报错**:
+```
+Error: NDK not found. Set NDK=/path/to/ndk or install Android NDK
 ```
 
-### 2. NDK 路径不匹配
-
-**触发场景**: 编译时报错找不到编译器
-**报错信息**: `No such file or directory: /tmp/ndk_extract/android-ndk-r29/...`
-**解决方案**: 创建符号链接
+**解决方案**:
 ```bash
-mkdir -p /tmp/ndk_extract
-ln -sf ~/Library/Android/android-ndk-r29 /tmp/ndk_extract/android-ndk-r29
+# 方法 1: 设置环境变量
+export NDK=/tmp/ndk_extract/android-ndk-r29
+
+# 方法 2: 指定 NDK 路径
+make NDK=/tmp/ndk_extract/android-ndk-r29
 ```
+
+**根因**: Makefile 自动检测路径不包含用户自定义安装路径。
 
 ---
 
 ## 构建/编译报错类
 
-### 3. 缺少嵌入文件 (su_daemon, wallpaper.webp)
+### Q: 编译时 format specifier 警告
 
-**触发场景**: 编译 exploit 时
-**报错信息**:
+**触发场景**: 编译 exploit 时出现 format 警告
+
+**完整报错**:
 ```
-src/su_blob.S:7:9: error: Could not find incbin file 'build/embed/su_daemon_aarch64_pie'
-src/wallpaper_blob.S:6:9: error: Could not find incbin file 'assets/wallpaper.webp'
-```
-**解决方案**:
-```bash
-cd exploit
-mkdir -p build/embed assets
-
-# 编译 su_daemon
-$CC --target=aarch64-linux-android35 --sysroot=$SYSROOT -O2 -pie \
-  src/su_daemon.c -o build/embed/su_daemon_aarch64_pie
-
-# 创建 wallpaper 占位文件
-python3 -c "
-import struct
-data = b'RIFF' + struct.pack('<I', 0) + b'WEBP'
-data += b'VP8 ' + struct.pack('<I', 30)
-data += bytes([0x9d, 0x01, 0x2a, 0x01, 0x00, 0x01, 0x00])
-data += bytes([0x01, 0x40, 0x25, 0xa4, 0x00, 0x03, 0x70, 0x00])
-data += bytes([0xfe, 0xfb, 0x94, 0x00, 0x00])
-size = len(data) - 8
-data = data[:4] + struct.pack('<I', size) + data[8:]
-open('assets/wallpaper.webp', 'wb').write(data)
-"
+src/util.c:561:82: warning: format specifies type 'int' but the argument has type 'size_t'
 ```
 
-### 4. TARGET_CONFIG_H 未定义
+**解决方案**: 这是一个无害的警告，不影响功能。可以忽略或修改 format specifier。
 
-**触发场景**: 编译 exploit 时
-**报错信息**:
-```
-src/offset.h:1:10: error: "TARGET_CONFIG_H is not defined"
-```
-**解决方案**: 编译时添加 `-DTARGET_CONFIG_H` 定义
-```bash
-$CC ... -DTARGET_CONFIG_H='"targets/oppo-find_n2/target.h"' ...
-```
-
-### 5. PMCCNTR_EL0 访问失败
-
-**触发场景**: 修改 timeutils.h 使用性能监控计数器
-**报错信息**: KernelSnitch 碰撞查找失败，assert 错误
-**解决方案**: 恢复使用 cntvct_el0 (用户态无法访问 PMCCNTR_EL0)
-```c
-// 恢复原始代码
-#elif defined(__ARM)
-    unsigned long long vct;
-    asm volatile("isb" ::: "memory");
-    asm volatile("mrs %0, cntvct_el0" : "=r"(vct));
-    asm volatile("isb" ::: "memory");
-    return (size_t)vct;
-```
+**根因**: `%d` 用于 `size_t` 类型参数，应使用 `%zu`。
 
 ---
 
 ## 运行时异常类
 
-### 6. KernelSnitch mm_struct 泄漏失败
+### Q: ashmem 打开失败 (EACCES)
 
-**触发场景**: 运行 exploit 时
-**报错信息**:
+**触发场景**: 尝试打开 `/dev/ashmem` 时被拒绝
+
+**完整报错**:
 ```
-[-] KernelSnitch mm_struct leak failed
-[-] prepare_kernel_page retry 1/12
+无法打开 /dev/ashmem: errno=13 (Permission denied)
 ```
+
+**解决方案**:
+```bash
+# 使用 UUID 后缀路径
+ls /dev/ashmem*  # 找到可用的 UUID 路径
+# 输出: /dev/ashmem874642ac-55fc-4f92-8d57-c514c4666592
+
+# 在代码中使用
+int fd = open("/dev/ashmem874642ac-55fc-4f92-8d57-c514c4666592", O_RDWR | O_CLOEXEC);
+```
+
+**根因**: SELinux 限制 shell 域访问 `ashmem_device` 类型，但 UUID 后缀路径使用 `ashmem_libcutils_device` 类型，shell 有权限访问。
+
+---
+
+### Q: FUTEX_CMP_REQUEUE_PI 返回 errno=35 (EAGAIN)
+
+**触发场景**: GhostLock 触发测试中，requeue 操作失败
+
+**完整报错**:
+```
+REQUEUE ret=-1 errno=35
+```
+
 **排查思路**:
-1. 检查 MM_STRUCT_SZ 是否正确 (应为 0x3c0)
-2. 检查 MM_ORDER 是否正确 (应为 3)
-3. 检查 futex_hashsize 是否正确 (应为 2048)
-4. 检查 KPTI 是否启用
-**解决方案**: 当前无解决方案，等待 NebuSec Android blog
-**根因分析**: KPTI 启用导致时序侧信道不准确，cntvct_el0 精度不足
+1. 检查 waiter 是否真正阻塞在 FUTEX_WAIT_REQUEUE_PI
+2. 检查 f_wait 值是否正确
+3. 检查 f_pi_target 是否已被 owner 锁定
 
-### 7. FUTEX_WAIT_REQUEUE_PI 超时
+**解决方案**:
+```c
+// 增加等待时间，确保 waiter 真正阻塞在内核中
+usleep(500000);  // 500ms → 3000ms
+// 或
+sleep(3);
+```
 
-**触发场景**: GhostLock 触发阶段
-**报错信息**:
-```
-slide waiter FUTEX_WAIT_REQUEUE_PI returned ret=-1 errno=110
-slide waiter: FUTEX_WAIT_REQUEUE_PI timed out
-```
+**根因**: waiter 调用 FUTEX_WAIT_REQUEUE_PI 后，内核需要时间将其加入 futex hash table。如果主线程在 waiter 真正阻塞前调用 requeue，内核找不到 waiter，返回 EAGAIN。
+
+**验证方法**: 在 requeue 前打印 f_wait 值，确认 waiter 已阻塞。
+
+---
+
+### Q: FUTEX_WAIT_REQUEUE_PI 返回值未打印
+
+**触发场景**: GhostLock 测试中，waiter 线程未输出 FUTEX_WAIT_REQUEUE_PI 的返回值
+
+**完整报错**: 无 (程序卡住)
+
 **排查思路**:
-1. 检查线程同步是否正确
-2. 检查 futex 地址是否有效
-**解决方案**: 这是预期行为，GhostLock 需要超时才能触发
-**根因分析**: FUTEX_WAIT_REQUEUE_PI 超时是 GhostLock 触发的必要条件
+1. 检查 waiter 线程是否被其他 futex 阻塞
+2. 检查 f_pi_chain 是否被正确锁定
+3. 检查 owner 线程是否已启动
 
-### 8. 偏移不正确导致手机崩溃
+**解决方案**: 确保 waiter 线程在调用 FUTEX_WAIT_REQUEUE_PI 前已完成 FUTEX_LOCK_PI。
 
-**触发场景**: 使用错误偏移运行 exploit
-**报错信息**: 手机重启
-**排查思路**:
-1. 对比 pahole 输出和 target.h
-2. 检查 MM_STRUCT_SZ 和 MM_ORDER
-3. 检查帧大小是否正确
-**解决方案**: 使用 pahole 和 objdump 从 vmlinux 验证所有偏移
-**根因分析**: 编译的内核与手机内核配置不同导致偏移差异
+**根因**: waiter 可能被 f_pi_chain 的 FUTEX_LOCK_PI 阻塞，无法执行后续操作。
 
-### 9. boot_id 不是内核指针
+---
 
-**触发场景**: slide.c 读取 /proc/sys/kernel/random/boot_id
-**报错信息**:
+### Q: perf_event_open 被 SELinux 阻止
+
+**触发场景**: 尝试使用 perf_event_open 泄漏内核地址
+
+**完整报错**:
 ```
-slide boot_id does not look like kernel pointer=3246fd5f535124e2
-slide: GhostLock may not have triggered, or stack reclaim failed
+perf_event_open (SOFTWARE) 失败: Permission denied (errno=13)
 ```
-**排查思路**:
-1. 检查 GhostLock 是否成功触发
-2. 检查 stack reclaim 是否成功
-**解决方案**: 当前无解决方案，需要先完成 stack reclaim
-**根因分析**: boot_id 是 UUID 格式，只有 GhostLock 成功触发后才会被内核指针覆盖
+
+**解决方案**: 无直接解决方案。需要 root 权限或 SELinux permissive 模式。
+
+**根因**: SELinux Enforcing 阻止 shell 域访问 perf_event 设备。
 
 ---
 
 ## 功能异常类
 
-### 10. /proc/kallsyms 全零
+### Q: KernelSnitch mm_struct 泄漏失败
 
-**触发场景**: 尝试读取内核符号地址
-**报错信息**: 所有地址显示为 0000000000000000
+**触发场景**: exploit 启动后，KernelSnitch 无法泄漏 mm_struct 地址
+
+**完整报错**:
+```
+[-] KernelSnitch mm_struct leak failed
+[-] prepare_kernel_page retry 1/12
+```
+
 **排查思路**:
-1. 检查 kptr_restrict 值
-2. 检查是否有 root 权限
-**解决方案**: 需要 root 权限或等待 NebuSec 替代方法
-**根因分析**: Android 安全机制限制内核信息泄漏
+1. 检查 CONFIG_FUTEX_PI 是否启用
+2. 检查 futex_hashsize 是否正确
+3. 检查 CPU 核心数配置
 
-### 11. ASHMEM 权限拒绝
+**解决方案**: 目前无解决方案。KPTI 启用导致时序侧信道失效。
 
-**触发场景**: 尝试打开 /dev/ashmem
-**报错信息**: `Permission denied`
-**解决方案**: 需要 root 权限
-**根因分析**: Android SELinux 策略限制
+**根因**: KPTI (CONFIG_UNMAP_KERNEL_AT_EL0=y) 启用后，cntvct_el0 (24MHz) 精度不足以检测 cache 访问差异。
 
-### 12. userfaultfd 不允许
+---
 
-**触发场景**: 尝试创建 userfaultfd
-**报错信息**: `Operation not permitted (errno=1)`
-**解决方案**: 需要 root 权限
-**根因分析**: Android seccomp 限制
+### Q: pselect fd_set 在堆上而非栈上
+
+**触发场景**: 分析 pselect 栈回收可行性时发现
+
+**技术细节**:
+- `set_fd_set()` 调用 `bitmap_alloc()` 分配堆内存
+- fd_set 数据存储在堆上，不在内核栈上
+- 即使帧大小匹配，用户数据也无法到达 waiter 位置
+
+**结论**: pselect 方法在 OPPO Find N2 上不可行。
+
+---
+
+### Q: /proc/self/pagemap 返回全零
+
+**触发场景**: 尝试通过 pagemap 泄漏物理页号
+
+**完整报错**: 无 (返回全零)
+
+**解决方案**: 无。Android 内核限制用户态访问物理页信息。
+
+**根因**: Android 内核配置 `CONFIG_STRICT_DEVMEM=y` 或类似限制。
 
 ---
 
 ## 性能问题类
 
-### 13. KernelSnitch 暴力搜索耗时过长
+### Q: GhostLock 触发时序要求
 
-**触发场景**: exploit 运行缓慢
+**触发场景**: GhostLock 测试中 requeue 频繁失败
+
+**技术细节**:
+- waiter 调用 FUTEX_WAIT_REQUEUE_PI 后需要 ~3 秒才能真正阻塞
+- 主线程需要在 waiter 阻塞后才能调用 FUTEX_CMP_REQUEUE_PI
+- 太早调用会导致 EAGAIN，太晚会导致 waiter 超时
+
+**解决方案**: 使用管道或事件进行同步，确保 waiter 已阻塞后再 requeue。
+
+---
+
+### Q: 内核符号地址不匹配
+
+**触发场景**: target.h 中的偏移与实际内核不匹配
+
 **排查思路**:
-1. 检查 CPU 核心数
-2. 检查线程数配置
-**解决方案**: 确保使用多核并行搜索
-```c
-int cpu_count = (int)sysconf(_SC_NPROCESSORS_ONLN);
-// 通常 8 核设备会创建 8 个搜索线程
-```
+1. 使用 IDA 打开 output.elf
+2. 搜索对应符号名
+3. 验证地址偏移
 
-### 14. fork 时序精度不足
+**解决方案**: 使用 `vmlinux-to-elf` 或 IDA 验证所有偏移。
 
-**触发场景**: 测试 fork 时序泄漏 mm_struct
-**报错信息**: 1077μs/次，无法检测时序差异
-**解决方案**: fork 时序方法不适用，需要其他方法
-**根因分析**: fork 操作本身耗时太长，无法用于精密时序测量
+**根因**: 仓库中的偏移可能来自不同的内核版本或编译配置。

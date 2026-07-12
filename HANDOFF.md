@@ -33,31 +33,33 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 - 影响: 无法获取 mm_struct 地址，后续 exploit 无法进行
 
 **问题 2: waiter 位置无法到达**
-- waiter 位置: `stack_top - 0x2c8` (712B)
+- waiter 位置: `stack_top - 0x288` (648B) — IDA 验证
 - 已测试的所有 stack reclaim 方法均失败
-- 差距: pselect fd_set 在 stack_top-0x1f8，差距 208B
+- pselect fd_set 在堆上（非栈上），无法用于 stack reclaim
+- 下一个候选: sendmsg (0x314 帧, 复制 cmsg 从用户到内核栈)
 
 ---
 
 ## 2. 偏移验证结果 (vmlinux Verified)
 
-### 帧大小 (OPPO 内核源码编译 vmlinux, objdump 验证)
+### 帧大小 (IDA output.elf 验证, 2026-07-12)
 
 | 函数 | 帧大小 | 来源 |
 |------|--------|------|
-| __arm64_sys_futex | 0x70 (112B) | SUB SP,SP,#0x70 |
-| do_futex | 0x130 (304B) | SUB SP,SP,#0x130 |
+| __arm64_sys_futex | 0x90 (144B) | SUB SP,SP,#0x90 |
+| do_futex | 0x70 (112B) | SUB SP,SP,#0x70 |
 | futex_wait_requeue_pi | 0x1a0 (416B) | SUB SP,SP,#0x1a0 |
-| **总 futex 链** | **0x340 (832B)** | |
-| **waiter 距栈顶** | **0x2c8 (712B)** | 0x340 - 0x78 |
+| **总 futex 链** | **0x300 (768B)** | |
+| **waiter 距栈顶** | **0x288 (648B)** | 0x300 - 0x78 |
 
 ### ⚠️ 重要: 之前的帧大小是错误的
 
-| 函数 | 旧值 | 新值 | 差异 |
-|------|------|------|------|
-| sys_futex | 0x10 (16B) | 0x70 (112B) | +96B |
-| do_futex | 0x1c0 (448B) | 0x130 (304B) | -144B |
-| waiter 位置 | stack_top-0x358 | stack_top-0x2c8 | -144B |
+| 函数 | 仓库旧值 | IDA 实际值 | 差异 |
+|------|---------|-----------|------|
+| sys_futex | 0x70 (112B) | 0x90 (144B) | +32B |
+| do_futex | 0x130 (304B) | 0x70 (112B) | -192B |
+| 总链 | 0x340 (832B) | 0x300 (768B) | -64B |
+| waiter 位置 | stack_top-0x2c8 | stack_top-0x288 | +0x40 |
 
 ### SLUB 分配器参数 (pahole 验证)
 
@@ -68,18 +70,20 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 | objects_per_slab | 34 | 32768 / 960 = 34 |
 | futex_hashsize | 2048 | 8 CPUs * 256 |
 
-### pselect 链分析
+### pselect 链分析 (IDA verified, 2026-07-12)
 
-| 函数 | 帧大小 |
-|------|--------|
-| sys_pselect6 | 0x90 (144B) |
-| core_sys_select | 0x1d0 (464B) |
-| do_select | 0x390 (912B) |
-| **总计** | **0x610 (1552B)** |
+| 函数 | 帧大小 | 来源 |
+|------|--------|------|
+| sys_pselect6 | 0xA0 (160B) | SUB SP,SP,#0xA0 |
+| core_sys_select | 0x1C0 (448B) | SUB SP,SP,#0x1C0 |
+| do_select | 0x3C0 (960B) | STP+0x60 + SUB+0x360 |
+| **总计** | **0x620 (1568B)** | |
 
-- fd_set 位置: stack_top - 0x1f8 (504B)
-- waiter 位置: stack_top - 0x2c8 (712B)
-- **差距: 208B — fd_set 无法触及 waiter**
+- fd_set 位置: stack_top - 0x1F8 (504B)
+- waiter 位置: stack_top - 0x288 (648B)
+- **差距: 232B — fd_set 无法触及 waiter**
+
+**关键发现**: pselect 的 fd_set 通过 `set_fd_set()` → `bitmap_alloc()` 分配在**堆上**，用户可控数据不在内核栈上。即使帧大小匹配，pselect 也无法用于 stack reclaim。
 
 ---
 
@@ -263,3 +267,80 @@ KASLR bypass 完成后:
 | test_cache_timing.c | Cache-based 时序攻击测试 |
 | test_improved_timing.c | 改进时序测量测试 |
 | test_auxv_leak.c | 辅助向量泄漏测试 |
+
+---
+
+## 11. IDA 逆向分析结果 (2026-07-12)
+
+**Binary**: output.elf (boot_unpacked), Image Base: 0xffffffc008000000
+
+### 帧大小修正 (IDA verified)
+
+| 函数 | 仓库旧值 | IDA 实际值 | 来源 |
+|------|---------|-----------|------|
+| `__arm64_sys_futex` | 0x70 | **0x90** | `SUB SP,SP,#0x90` |
+| `do_futex` | 0x130 | **0x70** | `SUB SP,SP,#0x70` |
+| `futex_wait_requeue_pi` | 0x1A0 | 0x1A0 | ✓ |
+| `__arm64_sys_pselect6` | 0x90 | **0xA0** | `SUB SP,SP,#0xA0` |
+| `core_sys_select` | 0x1D0 | **0x1C0** | `SUB SP,SP,#0x1C0` |
+| `do_select` | 0x390 | **0x3C0** | `STP+0x60` + `SUB+0x360` |
+| `binder_ioctl` | 0xF0 | **0xD0** | `SUB SP,SP,#0xD0` |
+| `__sys_sendmsg` | ? | **0x314** | `SUB SP,SP,#0x314` |
+
+### 关键函数地址 (IDA)
+
+| 函数 | 地址 |
+|------|------|
+| `__arm64_sys_futex` | 0xffffffc00829d164 |
+| `do_futex` | 0xffffffc0082932cc |
+| `futex_wait_requeue_pi` | 0xffffffc008297f78 |
+| `__arm64_sys_pselect6` | 0xffffffc008598c48 |
+| `core_sys_select` | 0xffffffc0085976dc |
+| `do_select` | 0xffffffc008597e2c |
+| `binder_ioctl` | 0xffffffc009228e9c |
+| `__sys_sendmsg` | 0xffffffc0093086d0 |
+
+### rt_mutex_waiter 在栈中的位置
+
+从 `futex_wait_requeue_pi` 反编译验证：
+
+```
+waiter 结构体 = stack_top - 0x300 (帧底部)
+waiter.lock = stack_top - 0x2C8 (关键字段)
+```
+
+| 字段 | 偏移 | 地址 |
+|------|------|------|
+| tree_entry | +0x00 | stack_top - 0x300 |
+| pi_tree_entry | +0x18 | stack_top - 0x2E8 |
+| task | +0x30 | stack_top - 0x2D0 |
+| **lock** | **+0x38** | **stack_top - 0x2C8** |
+| prio | +0x40 | stack_top - 0x2C0 |
+| deadline | +0x48 | stack_top - 0x2B8 |
+
+### 栈位置映射
+
+```
+stack_top
+  ...
+  stack_top - 0x1F8  ← pselect fd_set (堆分配, 非栈)
+  ...
+  stack_top - 0x288  ← futex waiter (栈帧内)
+  stack_top - 0x2C8  ← waiter.lock (关键字段)
+  stack_top - 0x2D0  ← waiter.task
+  stack_top - 0x300  ← waiter.tree_entry (帧底部)
+  ...
+```
+
+### 核心阻塞总结
+
+1. **pselect fd_set 是堆分配的** — `set_fd_set()` → `bitmap_alloc()`, 用户数据不在内核栈上
+2. **poll pollfd 也是堆分配的** — kmalloc 链
+3. **binder EACCES** — shell 用户无权限访问 /dev/binder
+4. **epoll_wait 太浅** — 仅 0xE0 帧
+
+### 下一步: sendmsg 候选
+
+`__sys_sendmsg` 帧大小 0x314 (788B), 将 `msghdr` + `cmsg` 从用户空间复制到内核栈。需要验证:
+1. cmsg 复制到栈的哪个位置
+2. 是否能到达 stack_top - 0x2C8

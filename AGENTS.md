@@ -27,21 +27,24 @@ Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
 
 | 方法 | 结果 | 原因 |
 |------|------|------|
-| pselect (NFDS=384) | fd_set 在 stack_top-0x1f8 | 差距 208B，无法到达 waiter |
-| pselect (NFDS=1024) | fd_set 在堆上 | 不在栈上 |
+| pselect (任意 NFDS) | fd_set 在堆上 | set_fd_set()→bitmap_alloc(), 用户数据不在栈上 |
 | binder ioctl | EACCES | shell 用户无权限 |
-| process_vm_readv | 帧仅 160B | 太浅，差距 552B |
+| process_vm_readv | 帧仅 160B | 太浅 |
 | PR_SET_MM_MAP | EPERM | Android 阻止 |
+| poll | pollfd 在堆上 | kmalloc 分配, 用户数据不在栈上 |
+| epoll_wait | 帧仅 0xE0 | 太浅 |
 
-**关键帧大小 (vmlinux 验证):**
+**下一个候选**: sendmsg — __sys_sendmsg 帧 0x314, 复制 cmsg 从用户到内核栈
+
+**关键帧大小 (IDA output.elf 验证, 2026-07-12):**
 
 | 函数 | 帧大小 |
 |------|--------|
-| __arm64_sys_futex | 0x70 (112B) |
-| do_futex | 0x130 (304B) |
+| __arm64_sys_futex | 0x90 (144B) |
+| do_futex | 0x70 (112B) |
 | futex_wait_requeue_pi | 0x1a0 (416B) |
-| **总栈深** | **0x340 (832B)** |
-| **waiter 距栈顶** | **0x2c8 (712B)** |
+| **总栈深** | **0x300 (768B)** |
+| **waiter 距栈顶** | **0x288 (648B)** |
 
 ### 2. 结构体差异
 
@@ -82,8 +85,9 @@ Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
 ## Key gotchas
 
 - **`TARGET_CONFIG_H` is mandatory** — `offset.h` errors without it. Pass as a `-D` string literal.
-- **Server vmlinux frame sizes were WRONG** — Previous values (sys_futex=0x10, do_futex=0x1c0) were incorrect. Actual values from OPPO kernel vmlinux: sys_futex=0x70, do_futex=0x130. All frame analysis must use the compiled vmlinux.
-- **KASLR bypass (slide) is blocked** — Waiter is at `stack_top - 0x2c8` (712B), no syscall writes user-controlled data at that offset. This is the main blocker.
+- **仓库帧大小全部错误** — HANDOFF.md 旧值 (sys_futex=0x70, do_futex=0x130, do_select=0x390) 均不正确。IDA 验证: sys_futex=0x90, do_futex=0x70, do_select=0x3C0。必须使用 IDA output.elf 数据。
+- **KASLR bypass (slide) 阻塞** — Waiter 在 `stack_top - 0x288` (648B), 无 syscall 能在此偏移写入用户可控数据。这是主要阻塞点。
+- **pselect fd_set 在堆上** — set_fd_set()→bitmap_alloc(), 用户数据不在内核栈上。pselect 无法用于 stack reclaim。
 - **Firefox 151 required** — CVE-2026-10702 only exists in version 151.0.
 
 ## Architecture notes

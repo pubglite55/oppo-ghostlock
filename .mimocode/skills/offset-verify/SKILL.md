@@ -68,17 +68,17 @@ for order in range(5):
 # 在本地编辑 exploit/targets/oppo-find_n2/target.h
 ```
 
-## 帧大小参考
+## 帧大小参考 (IDA output.elf 验证, 2026-07-12)
 
 | 函数 | 帧大小 | 来源 |
 |------|--------|------|
-| __arm64_sys_futex | 0x70 (112B) | objdump |
-| do_futex | 0x130 (304B) | objdump |
-| futex_wait_requeue_pi | 0x1a0 (416B) | objdump |
-| waiter 位置 | stack_top - 0x2c8 | 计算 |
+| __arm64_sys_futex | 0x90 (144B) | IDA SUB SP,SP,#0x90 |
+| do_futex | 0x70 (112B) | IDA SUB SP,SP,#0x70 |
+| futex_wait_requeue_pi | 0x1a0 (416B) | IDA SUB SP,SP,#0x1a0 |
+| waiter 位置 | stack_top - 0x288 | IDA 计算 (0x300 - 0x78) |
 
 ## 注意事项
 
-- 必须使用 OPPO 内核源码编译的 vmlinux
-- 服务器 vmlinux 帧大小可能与设备不匹配
+- 必须使用 IDA output.elf 数据，不要使用仓库旧值
+- 仓库旧值: sys_futex=0x70 (实际0x90), do_futex=0x130 (实际0x70)
 - pahole 需要 DWARF 调试信息

@@ -1,142 +1,42 @@
 # 贡献指南
 
-感谢你对 GhostLock OPPO Find N2 项目的关注！
+感谢你对本项目的关注！本项目是 OPPO Find N2 上 GhostLock (CVE-2026-43499) 漏洞利用的研究项目。
 
 ## 贡献方式
 
-### 报告 Bug
+### 报告问题
 
-1. 搜索 [Issues](https://github.com/your-username/oppo-ghostlock/issues) 确认问题未被报告
-2. 使用 [Bug 反馈模板](.github/ISSUE_TEMPLATE/bug_report.md) 提交
-3. 提供详细的复现步骤和日志
-
-### 提交功能建议
-
-1. 搜索 [Issues](https://github.com/your-username/oppo-ghostlock/issues) 确认建议未被提出
-2. 使用 [功能建议模板](.github/ISSUE_TEMPLATE/feature_request.md) 提交
-3. 说明需求背景和期望功能
+如果你发现了 bug 或有改进建议，请创建 [Issue](https://github.com/pubglite55/oppo-ghostlock/issues)。
 
 ### 提交代码
 
-1. Fork 仓库
-2. 创建功能分支: `git checkout -b feature/your-feature`
-3. 提交更改: `git commit -m 'feat: add your feature'`
-4. 推送分支: `git push origin feature/your-feature`
-5. 创建 Pull Request
+1. Fork 本仓库
+2. 创建你的特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交你的更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建一个 Pull Request
 
-## Issue 提交规范
+## 开发规范
 
-### Bug 反馈
+### 代码风格
 
-```markdown
-## 问题描述
-简要描述遇到的问题
+- 使用 2 空格缩进
+- 函数名使用小写下划线
+- 宏定义使用大写下划线
+- 变量名使用小写下划线
 
-## 复现步骤
-1. 打开 Firefox 151
-2. 访问 exploit 页面
-3. ...
+### 提交信息
 
-## 预期行为
-描述期望的结果
+- 使用中文或英文
+- 简洁明了地描述更改内容
+- 使用 `feat:`, `fix:`, `docs:` 等前缀
 
-## 实际行为
-描述实际发生的情况
+### 测试
 
-## 环境信息
-- 设备: OPPO Find N2
-- 内核: 5.10.236
-- Firefox: 151.0
+- 确保代码能在 OPPO Find N2 上编译和运行
+- 测试关键功能点
+- 更新相关文档
 
-## 日志/截图
-粘贴相关日志或截图
-```
+## 免责声明
 
-### 功能建议
-
-```markdown
-## 需要背景
-描述当前的限制或痛点
-
-## 期望功能
-描述期望的功能
-
-## 替代方案
-描述其他可能的解决方案
-
-## 补充说明
-其他相关信息
-```
-
-## 本地开发贡献步骤
-
-### 1. 环境准备
-
-```bash
-# 克隆仓库
-git clone https://github.com/your-username/oppo-ghostlock.git
-cd oppo-ghostlock
-
-# 安装依赖
-brew install android-ndk android-platform-tools
-```
-
-### 2. 创建分支
-
-```bash
-git checkout -b feature/your-feature
-```
-
-### 3. 开发测试
-
-```bash
-# 编译 exploit
-NDK=~/Library/Android/android-ndk-r29
-$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang \
-  --target=aarch64-linux-android35 \
-  --sysroot=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot \
-  -I. -O2 -fPIC -shared \
-  -DTARGET_CONFIG_H="exploit/targets/oppo-find_n2/target.h" \
-  exploit/src/*.c exploit/src/*.S \
-  -pthread -o preload.so
-
-# 测试
-adb push preload.so /data/local/tmp/
-adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
-```
-
-### 4. 提交代码
-
-```bash
-git add .
-git commit -m "feat: add your feature description"
-git push origin feature/your-feature
-```
-
-## 代码审核标准
-
-### 必须满足
-
-- [ ] 代码编译通过
-- [ ] 在目标设备上测试通过
-- [ ] 不会导致设备崩溃
-- [ ] 偏移配置正确
-- [ ] 文档更新
-
-### 推荐
-
-- [ ] 添加单元测试
-- [ ] 更新 README
-- [ ] 更新 CHANGELOG
-- [ ] 添加调试日志
-
-## 行为准则
-
-- 尊重其他贡献者
-- 提供建设性的反馈
-- 专注于技术问题
-- 遵守 responsible disclosure 原则
-
-## 许可证
-
-贡献的代码将按照 GPL-3.0 协议开源。
+本项目仅供安全研究和教育目的。未经授权对他人设备进行测试是违法的。贡献者应确保其贡献符合相关法律法规。

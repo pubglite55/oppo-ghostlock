@@ -2,131 +2,106 @@
 
 ## 使用类
 
-### Q: 支持哪些设备？
+### Q: 这个 exploit 能 root 所有 OPPO 设备吗?
 
-**A**: 目前仅支持 **OPPO Find N2 (CPH2413/PGU110)**，内核版本 5.10.236。其他设备需要重新提取偏移。
+**A**: 不能。本项目专门针对 OPPO Find N2 (SM8475/CPH2413) 适配。不同设备的内核版本、栈布局、ashmem 类型可能不同，需要重新适配。
 
-### Q: 需要 root 权限吗？
+### Q: 需要什么权限才能运行?
 
-**A**: exploit 本身不需要 root，但某些信息泄漏方法需要 root 权限。当前 KernelSnitch 失败是因为 KPTI 启用。
+**A**: 需要 shell 权限 (uid=2000)。不需要 root 或特殊 SELinux 上下文。
 
-### Q: 会损坏设备吗？
+### Q: exploit 成功后会显示什么?
 
-**A**: exploit 失败时可能导致手机重启，但不会损坏设备。建议在测试设备上运行。
-
-### Q: Firefox 版本要求？
-
-**A**: 必须使用 **Firefox 151.0**。CVE-2026-10702 漏洞仅存在于此版本。
-
-### Q: exploit 成功的标志是什么？
-
-**A**: 成功后会显示 `uid=0(root)`，并且壁纸会更改（如果安装了 wallpaper）。
+**A**: 目前 exploit 尚未完成完整提权链。成功后预期显示:
+```
+[+] preload starting pid=...
+[+] startup context pid=... uid=0(root)
+```
 
 ---
 
 ## 开发类
 
-### Q: 如何添加新设备支持？
+### Q: 为什么 KernelSnitch 失败了?
 
-**A**:
-1. 获取设备的 boot.img
-2. 从 OPPO 内核源码编译 vmlinux (需要 DWARF 调试信息)
-3. 使用 pahole 提取偏移
-4. 更新 `exploit/targets/<device>/target.h`
+**A**: KPTI (CONFIG_UNMAP_KERNEL_AT_EL0=y) 启用后，cntvct_el0 (24MHz) 精度不足以检测 cache 访问差异。这是时序侧信道的根本限制。
 
-### Q: 偏移从哪里获取？
+### Q: 为什么 pselect 不能用于栈回收?
 
-**A**: 使用 pahole 从编译的 vmlinux 提取：
-```bash
-pahole -C task_struct vmlinux
-pahole -C cred vmlinux
-pahole -C mm_struct vmlinux
-```
+**A**: `set_fd_set()` 使用 `bitmap_alloc()` 在堆上分配内存，用户数据不在内核栈上。即使帧大小匹配，fd_set 数据也无法到达 waiter 位置。
 
-### Q: MM_STRUCT_SZ 和 MM_ORDER 如何确定？
+### Q: 为什么 ashmem 打开失败?
 
-**A**:
-- MM_STRUCT_SZ: 从 pahole 获取 mm_struct 大小，加上 cpumask_size()
-- MM_ORDER: 使用 SLUB calculate_order 计算
+**A**: SELinux 限制 shell 域访问 `/dev/ashmem`。解决方法是使用 UUID 后缀路径 (`/dev/ashmem874642ac-...`)，该路径使用不同的 SELinux 类型。
 
-### Q: 为什么在 macOS 上编译？
+### Q: C ashmem 和 Rust ashmem 有什么区别?
 
-**A**: macOS 开发机使用 Android NDK 交叉编译。内核编译需要 Linux 服务器。
+**A**: C ashmem 的 `ashmem_area.name[88]` 与 `configfs_buffer.bin_buffer` 重叠，可以实现类型混淆。Rust ashmem 的字段布局不同，无法利用。
 
-### Q: 帧大小为什么之前是错的？
+### Q: 帧大小数据是否正确?
 
-**A**: 之前的帧大小是从服务器编译的 vmlinux 获取的，但服务器 vmlinux 与设备实际内核不匹配。正确的方法是从 OPPO 内核源码编译 vmlinux，然后用 objdump 验证。
-
-### Q: 如何验证帧大小？
-
-**A**: 使用 objdump 反汇编 vmlinux：
-```bash
-aarch64-linux-gnu-objdump -d vmlinux | grep -A 5 "<do_futex>:"
-# 查找 SUB SP, SP, #imm 指令
-```
+**A**: 仓库中的帧大小数据已经过 IDA output.elf 验证修正。旧值 (sys_futex=0x70, do_futex=0x130, do_select=0x390) 均不正确。当前值: sys_futex=0x90, do_futex=0x70, do_select=0x3C0。
 
 ---
 
 ## 部署类
 
-### Q: 如何编译 exploit？
+### Q: 如何在设备上测试?
 
 **A**:
 ```bash
-cd exploit
-make                    # 自动检测 NDK
-make NDK=/path/to/ndk  # 指定 NDK 路径
-```
+# 编译
+cd exploit && make
 
-### Q: 如何部署到设备？
-
-**A**:
-```bash
+# 部署
 adb push preload.so /data/local/tmp/
 adb shell "chmod 755 /data/local/tmp/preload.so"
+
+# 测试
 adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
 ```
 
-### Q: 服务器需要什么配置？
+### Q: 编译时找不到 NDK 怎么办?
 
 **A**:
-- Python 3.8+
-- 端口 8080 (exploit 服务器)
-- 端口 8081 (日志服务器)
-- 与手机同一网络
+```bash
+# 方法 1: 设置环境变量
+export NDK=/tmp/ndk_extract/android-ndk-r29
 
-### Q: 如何查看实时日志？
+# 方法 2: 指定 NDK 路径
+make NDK=/path/to/ndk
+```
 
-**A**: 在浏览器访问 `http://<开发机IP>:8081`
+### Q: 如何验证 exploit 是否工作?
 
-### Q: exploit 失败后如何调试？
-
-**A**:
-1. 查看 `http://<开发机IP>:8081` 日志
-2. 检查 KernelSnitch 输出
-3. 验证偏移是否正确
-4. 检查 seccomp 状态
+**A**: 检查输出中是否包含:
+- `[+] preload starting pid=...` — preload 加载成功
+- `[+] startup context pid=... uid=2000` — 初始上下文正确
+- `[+] build config pid=... slide=pselect` — 配置正确
 
 ---
 
 ## 技术类
 
-### Q: KernelSnitch 是什么？
+### Q: GhostLock 的触发条件是什么?
 
-**A**: KernelSnitch 是一个使用 futex 哈希时序侧信道泄漏内核 mm_struct 地址的技术。
+**A**:
+1. CONFIG_FUTEX_PI=y
+2. 3 个 futex words (f_wait, f_pi_target, f_pi_chain)
+3. 3 个线程 (waiter, owner, consumer)
+4. FUTEX_CMP_REQUEUE_PI 竞争条件
 
-### Q: GhostLock 漏洞原理？
+### Q: waiter 位置在哪里?
 
-**A**: GhostLock (CVE-2026-43499) 是 rtmutex 栈 UAF 漏洞，通过 FUTEX PI 操作触发。
+**A**: `stack_top - 0x288` (648B)，从 IDA output.elf 验证。仓库旧值 0x2c8 不正确。
 
-### Q: 为什么 KernelSnitch 失败？
+### Q: 为什么需要 mm_struct 地址?
 
-**A**: 因为 KPTI 启用 (CONFIG_UNMAP_KERNEL_AT_EL0=y)，导致时序侧信道不准确。cntvct_el0 精度不足，PMCCNTR_EL0 需要内核权限。
+**A**: `prepare_skb_payload()` 需要 mm_struct 地址来计算 SLUB slab 基址，从而布置 fake kernel page。没有 mm_struct 地址，无法设置 fake page，整个 exploit 链无法继续。
 
-### Q: waiter 位置是多少？
+### Q: 下一步计划是什么?
 
-**A**: `stack_top - 0x2c8` (712B)，从 vmlinux objdump 验证。
-
-### Q: 为什么需要等 NebuSec blog？
-
-**A**: NebuSec 已确认将在下一篇 Android blog 中讨论 Android 上的 stack reclaim 和 ASLR bypass 方法。这是当前最可行的方向。
+**A**:
+1. 等待 NebuSec Android blog 发布 stack reclaim 方法
+2. 寻找替代 mm_struct 泄漏方法
+3. 尝试用 sendmsg cmsg 实现栈回收

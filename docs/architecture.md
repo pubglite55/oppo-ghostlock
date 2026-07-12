@@ -2,191 +2,193 @@
 
 ## 设计理念
 
-本项目采用**分层利用链**架构，将复杂的内核漏洞利用分解为独立的模块化阶段：
+本项目基于 [NebuSec CyberMeowfia](https://github.com/NebuSec/CyberMeowfia) 的 exploit 架构，针对 OPPO Find N2 设备进行适配。核心设计原则：
 
-1. **用户态初始访问层**：利用 Firefox 浏览器漏洞获取代码执行
-2. **内核信息泄漏层**：通过时序侧信道泄漏内核地址
-3. **内核漏洞触发层**：利用 GhostLock 漏洞创建悬空指针
-4. **权限提升层**：修改进程凭证获取 root 权限
+1. **模块化** — exploit 链分为独立阶段，每个阶段可单独测试
+2. **设备适配** — 通过 `target.h` 隔离设备特定偏移
+3. **防御规避** — 绕过 KPTI、SELinux、kptr_restrict 等安全机制
 
 ## 整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Firefox 151 Browser                       │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │         CVE-2026-10702 Exploit (JS/WASM)            │   │
-│  │  AAW │ AAR │ RW64 │ MPROTECT │ ADDR0F               │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                           │                                  │
-│                           ▼                                  │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              preload.so (LD_PRELOAD)                  │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │   │
-│  │  │   Slide     │  │  KernelSnitch│  │  GhostLock  │ │   │
-│  │  │  (KASLR)    │  │  (mm_struct) │  │  (FUTEX PI) │ │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘ │   │
-│  │         │                │                │          │   │
-│  │         ▼                ▼                ▼          │   │
-│  │  ┌──────────────────────────────────────────────┐   │   │
-│  │  │           Pipe Physical R/W                  │   │   │
-│  │  │        (内核物理内存读写原语)                  │   │   │
-│  │  └──────────────────────────────────────────────┘   │   │
-│  │         │                                           │   │
-│  │         ▼                                           │   │
-│  │  ┌──────────────────────────────────────────────┐   │   │
-│  │  │           Root Privilege Escalation           │   │   │
-│  │  │         (修改 cred 结构体获取 root)            │   │   │
-│  │  └──────────────────────────────────────────────┘   │   │
-│  └──────────────────────────────────────────────────────┘   │
+│                    Exploit Chain (6 stages)                   │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 1: Firefox CVE-2026-10702                             │
+│   SpiderMonkey type confusion → fake TypedArray → AAW       │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 2: KASLR Bypass (slide)                               │
+│   pselect fd_set → fake fops → boot_id leak → kernel base  │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 3: mm_struct Leak (KernelSnitch)                      │
+│   futex hash collision → timing side-channel → mm_struct    │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 4: GhostLock Trigger                                  │
+│   FUTEX_CMP_REQUEUE_PI → dangling pi_blocked_on → fops     │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 5: Pipe Physical R/W                                  │
+│   pipe_buffer manipulation → physical read/write            │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 6: Root (cred + SELinux)                              │
+│   patch cred → disable seccomp → disable SELinux            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## 核心模块详解
 
-### 1. Firefox Exploit (CVE-2026-10702)
+### 1. KernelSnitch (mm_struct 泄漏)
 
-**功能**: 在 Firefox 151 浏览器中获取用户态代码执行
+**功能**: 通过 futex hash table 碰撞泄漏内核 mm_struct 地址
 
-**输入**: Firefox 浏览器访问 exploit 页面
-**输出**: AAW (任意地址写)、AAR (任意地址读)、RW64、MPROTECT 原语
+**原理**:
+- Linux futex hash table 的 key 包含进程的 `mm_struct` 指针
+- 通过制造 futex hash 碰撞，观察包含 `mm_struct` 的内存区域
+- 用时序侧信道 (cache timing) 暴力搜索 2GB direct map 范围
 
-**依赖**: Firefox 151.0, 不需要特殊内核配置
-
-**关键实现**:
-- 利用 SpiderMonkey JS 引擎漏洞
-- 通过 TypedArray 操控获取任意读写
-- 使用 WASM 和 mprotect 获取代码执行
-
-### 2. Slide/pselect (KASLR 绕过)
-
-**功能**: 泄漏内核 KASLR 基地址
-
-**输入**: 用户态进程
-**输出**: 内核基地址、slide_logger、bootid_data 等地址
-
-**依赖**: 无特殊权限要求
-
-**关键实现**:
-- 使用 pselect 系统调用的时序差异
-- 扫描内核虚拟地址范围
-- 通过多次测量获取准确地址
-
-### 3. KernelSnitch (mm_struct 泄漏)
-
-**功能**: 泄漏内核 mm_struct 地址
-
-**输入**: 用户态进程
+**输入**: futex_hashsize=2048, MM_STRUCT_SZ=0x3c0, MM_ORDER=3
 **输出**: mm_struct 内核地址
+**依赖**: CONFIG_FUTEX_PI=y
 
-**关键参数** (已验证):
-- MM_STRUCT_SZ = 0x3c0 (960 bytes)
-- MM_ORDER = 3 (32KB slabs)
-- mm_objs_per_slab = 34
+**当前状态**: ❌ KPTI 启用导致时序不准确
 
-**关键实现**:
-- 使用 futex 哈希时序侧信道
-- 创建碰撞来识别内核 slab
-- 扫描 64GB 虚拟地址范围
+### 2. GhostLock 触发
 
-### 4. GhostLock (CVE-2026-43499)
+**功能**: 通过 FUTEX_CMP_REQUEUE_PI 竞争条件创建 dangling pi_blocked_on 指针
 
-**功能**: 利用 rtmutex 栈 UAF 创建内核悬空指针
+**原理**:
+1. Thread A (waiter) 调用 `FUTEX_WAIT_REQUEUE_PI` 并阻塞
+2. Thread B (owner) 调用 `FUTEX_LOCK_PI` 锁定目标
+3. Main thread 调用 `FUTEX_CMP_REQUEUE_PI` 触发竞争
+4. `remove_waiter()` 清除 `current->pi_blocked_on` 而非 `waiter->task->pi_blocked_on`
+5. waiter 的 `pi_blocked_on` 变成悬空指针
 
-**输入**: 三个 futex 词和三个线程
-**输出**: 悬空的 pi_blocked_on 指针
+**输入**: 3 个 futex words (f_wait, f_pi_target, f_pi_chain)
+**输出**: dangling pi_blocked_on 指针
+**已验证**: ✅ FUTEX_CMP_REQUEUE_PI ret=1
 
-**关键实现**:
-- FUTEX_LOCK_PI: 锁定 PI futex
-- FUTEX_WAIT_REQUEUE_PI: 带重排队的等待
-- FUTEX_CMP_REQUEUE_PI: 带比较的重排队
-- 创建 PI 依赖循环触发 -EDEADLK
+### 3. Fake Kernel Page 布置
 
-### 5. Pipe Physical R/W
+**功能**: 在 SLUB slab 中布置伪造的内核数据结构
 
-**功能**: 通过 pipe buffer 实现内核物理内存读写
+**原理**:
+- 使用 SKB payload 通过 sendmsg 发送到内核
+- SKB 数据落在 order-3 slab (32KB) 中
+- 在 slab 中布置 fake_lock, fake_fops, fake_task 等结构
+- fake_lock 的 right 指针指向 `ashmem_misc.fops`
 
-**输入**: mm_struct 地址
-**输出**: 内核物理内存读写原语
+**输入**: mm_struct 地址 (用于计算 slab 基址)
+**输出**: fake kernel page at known address
+**当前状态**: ❌ 需要 mm_struct 地址
 
-**关键实现**:
-- 使用 SKB (socket buffer) 操控内核内存
-- 通过 pipe buffer 建立物理内存映射
-- 实现任意内核地址读写
+### 4. 类型混淆 (C ashmem)
 
-### 6. Root Privilege Escalation
+**功能**: 通过 ashmem/configfs 类型混淆实现任意内核读写
 
-**功能**: 修改进程凭证获取 root 权限
+**原理**:
+1. GhostLock 覆盖 `ashmem_misc.fops` → 指向 `configfs_bin_file_operations`
+2. 打开 `/dev/ashmem` → 内核分配 `ashmem_area` 到 `file->private_data`
+3. `ASHMEM_SET_NAME` 写入 name[88] → 控制 `configfs_buffer.bin_buffer` 指针
+4. 调用 read/write → 内核通过 `bin_buffer` 执行任意读写
 
-**输入**: 内核读写原语
-**输出**: uid=0 (root)
+**关键结构重叠**:
+```
+ashmem_area + 0x88 (name[88])  ↔  configfs_buffer + 0x58 (bin_buffer)
+```
 
-**关键实现**:
-- 找到当前进程的 task_struct
-- 修改 cred 结构体的 uid/gid/capabilities
-- 绕过 SELinux 强制访问控制
+**当前状态**: ✅ 理论可行 (C ashmem 已验证)
+
+### 5. Pipe 物理读写
+
+**功能**: 通过 pipe_buffer 实现物理内存读写
+
+**原理**:
+- 修改 pipe_buffer 的 page 指针指向 direct map
+- 通过 pipe read/write 操作物理内存
+
+**输入**: 任意内核读写 (来自类型混淆)
+**输出**: 物理内存读写能力
+**当前状态**: ⏳ 依赖类型混淆
+
+### 6. Root 提权
+
+**功能**: 修改 cred 结构体和 SELinux 状态实现 root
+
+**原理**:
+- 遍历 `init_task.tasks` 找到当前进程
+- 修改 `cred.uid=0`, `cred.capabilities=FULL`, `cred.security.SID=1`
+- 清除 seccomp, 禁用 SELinux enforcing
+
+**输入**: 任意内核读写
+**输出**: root 权限
+**当前状态**: ⏳ 依赖 pipe 物理读写
 
 ## 核心业务流程
 
-### 完整利用链流程
-
 ```
-1. 用户访问 exploit 页面
+1. Firefox exploit → preload.so (LD_PRELOAD)
    ↓
-2. Firefox exploit 触发 (CVE-2026-10702)
+2. KernelSnitch → 泄漏 mm_struct 地址
    ↓
-3. 获取 AAW/AAR/RW64 原语
+3. prepare_kernel_page() → 布置 fake kernel page
    ↓
-4. 下载并执行 preload.so (LD_PRELOAD)
+4. FUTEX_CMP_REQUEUE_PI → 触发 GhostLock
    ↓
-5. Slide/pselect 泄漏内核基地址
+5. pselect → 操纵内核栈 → 覆盖 ashmem_misc.fops
    ↓
-6. KernelSnitch 泄漏 mm_struct 地址
+6. 打开 /dev/ashmem → 类型混淆 → 任意读写
    ↓
-7. 设置内核页访问 (Pipe Physical R/W)
+7. pipe physrw → 物理内存读写
    ↓
-8. 触发 GhostLock 漏洞 (FUTEX PI)
-   ↓
-9. 创建悬空指针
-   ↓
-10. 修改 cred 结构体获取 root
-```
-
-### KernelSnitch 详细流程
-
-```
-1. kernelsnitch_setup() 初始化
-   - 分配 256MB 虚拟内存 (ashmem)
-   - 设置碰撞参数 (4 collisions)
-   ↓
-2. kernelsnitch_find_collisions() 查找碰撞
-   - 使用 futex 哈希创建碰撞桶
-   - 测量时序找到碰撞地址
-   ↓
-3. kernelsnitch_bruteforce() 暴力搜索
-   - 8 个线程并行扫描
-   - 扫描范围: 0xffffff8000000000 - 0xffffff9000000000
-   - 检查 futex 哈希匹配
-   ↓
-4. 返回 mm_struct 地址
+8. patch cred → root
 ```
 
 ## 技术选型说明
 
-| 技术 | 选择 | 原因 | 对比方案 |
-|------|------|------|----------|
-| KASLR 绕过 | Slide/pselect | 不需要 futex, 兼容性好 | Prefetch (需要 KPTI 关闭) |
-| mm_struct 泄漏 | KernelSnitch | 时序侧信道, 可靠性高 | PR_SET_MM_MAP (更复杂) |
-| 内核漏洞 | GhostLock (CVE-2026-43499) | 15年历史, 影响所有 Linux | 其他内核漏洞 |
-| 内核读写 | Pipe Physical R/W | 基于 pipe buffer, 稳定 | SKB 其他利用 |
-| 权限提升 | cred 修改 | 直接修改进程凭证 | core_pattern (DirtyMode) |
+| 技术 | 选型原因 | 替代方案 |
+|------|---------|---------|
+| GhostLock (CVE-2026-43499) | 影响范围广 (Linux 2.6.39-7.1)，Android 设备普遍受影响 | 无 |
+| FUTEX_CMP_REQUEUE_PI | GhostLock 的触发入口，无需特殊权限 | 无 |
+| C ashmem | name[88] 与 configfs_buffer.bin_buffer 重叠，可实现类型混淆 | Rust ashmem 不可用 |
+| configfs_bin_file_operations | read_iter/write_iter 使用 bin_buffer 指针，可实现任意读写 | 其他 fops (需验证) |
+| pselect stack reclaim | 利用内核栈重用写入 waiter 位置 | sendmsg cmsg (待验证) |
 
-## 安全考虑
+## 关键数据结构
 
-- Firefox seccomp 沙箱: Seccomp=2, Seccomp_filters=1
-- SELinux: enforcing 模式
-- KASLR: 启用 (CONFIG_RANDOMIZE_BASE=y)
-- SLUB: 启用随机化 (CONFIG_SLAB_FREELIST_RANDOM=y)
+### rt_mutex_waiter (pahole 验证)
 
-> [!WARNING]
-> GhostLock 的 FUTEX PI 操作在 Firefox seccomp 沙箱中被阻止，需要替代技术绕过。
+```c
+struct rt_mutex_waiter {
+    +0x00: rb_node tree_entry;      // 24 bytes
+    +0x18: rb_node pi_tree_entry;   // 24 bytes
+    +0x30: struct task_struct *task; // 8 bytes
+    +0x38: struct rt_mutex_base *lock; // 8 bytes
+    +0x40: int prio;                // 4 bytes
+    +0x48: u64 deadline;            // 8 bytes
+};  // 总计 80 bytes
+```
+
+### ashmem_area (IDA 验证)
+
+```c
+struct ashmem_area {               // 312 bytes (C ashmem)
+    +0x00: char name[256];         // ASHMEM_SET_NAME 写入
+    +0x88: name[88]                // 与 configfs_buffer.bin_buffer 重叠!
+    +0x110: struct list_head unpinned;
+    +0x130: size_t size;
+};
+```
+
+### configfs_buffer (IDA 验证)
+
+```c
+struct configfs_buffer {           // 128 bytes
+    +0x20: struct mutex mutex;
+    +0x50: bool needs_fill;
+    +0x58: void *bin_buffer;       // 与 ashmem_area.name[88] 重叠!
+    +0x60: unsigned int bin_buffer_size;
+    +0x68: unsigned int cb_max_size;
+    +0x70: struct configfs_dirent *sd;
+    +0x78: struct module *module;
+    +0x88: struct configfs_bin_operations *cb;
+};
+```

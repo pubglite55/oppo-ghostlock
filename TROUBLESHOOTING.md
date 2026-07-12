@@ -150,10 +150,16 @@ perf_event_open (SOFTWARE) 失败: Permission denied (errno=13)
 1. 检查 CONFIG_FUTEX_PI 是否启用
 2. 检查 futex_hashsize 是否正确
 3. 检查 CPU 核心数配置
+4. 检查 FUTEX_WAKE_PRIVATE timing ratio
 
-**解决方案**: 目前无解决方案。KPTI 启用导致时序侧信道失效。
+**解决方案**: 目前无直接解决方案。需要寻找替代 mm_struct 泄露方法。
 
-**根因**: KPTI (CONFIG_UNMAP_KERNEL_AT_EL0=y) 启用后，cntvct_el0 (24MHz) 精度不足以检测 cache 访问差异。
+**根因（已确认 2026-07-13）**: 
+- Kernel 5.10 的 `FUTEX_WAKE_PRIVATE` with `val=0` 被优化为**不遍历 hash chain**，直接返回
+- 诊断测试结果：4096 waiters 时 timing ratio 仅 1.0-1.5x，远低于 KernelSnitch 需要的 10x 阈值
+- `FUTEX_CMP_REQUEUE_PI` timing ratio 1.4x（不够）
+- `FUTEX_TRYLOCK_PI` timing ratio 1.7x（不够）
+- 所有基于 futex timing 的碰撞检测在 kernel 5.10 上完全失效
 
 ---
 
@@ -179,6 +185,20 @@ perf_event_open (SOFTWARE) 失败: Permission denied (errno=13)
 **解决方案**: 无。Android 内核限制用户态访问物理页信息。
 
 **根因**: Android 内核配置 `CONFIG_STRICT_DEVMEM=y` 或类似限制。
+
+---
+
+### Q: pselect side-channel 能否替代 KernelSnitch 定位 mm_struct？
+
+**触发场景**: 寻找 KernelSnitch 的替代方案
+
+**技术分析**:
+- pselect side-channel 泄漏的是**内核栈上的数据**（nfulnl_logger 地址），用于 KASLR bypass
+- mm_struct 在 **slab 分配器**中，不在内核栈上
+- pselect 泄漏的数据中不包含 current->mm 指针
+- 无法直接从 pselect 泄漏的数据推导出 mm_struct 地址
+
+**结论**: pselect side-channel 不能直接替代 KernelSnitch 定位 mm_struct。需要寻找其他方法。
 
 ---
 

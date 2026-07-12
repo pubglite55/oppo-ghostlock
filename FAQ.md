@@ -24,7 +24,11 @@
 
 ### Q: 为什么 KernelSnitch 失败了?
 
-**A**: KPTI (CONFIG_UNMAP_KERNEL_AT_EL0=y) 启用后，cntvct_el0 (24MHz) 精度不足以检测 cache 访问差异。这是时序侧信道的根本限制。
+**A**: Kernel 5.10 的 `FUTEX_WAKE_PRIVATE` with `val=0` 被优化为不遍历 hash chain，直接返回。诊断测试显示 4096 waiters 时 timing ratio 仅 1.0-1.5x，远低于 KernelSnitch 需要的 10x 阈值。所有基于 futex timing 的碰撞检测在 kernel 5.10 上完全失效。KASLR bypass (pselect) 仍然可用。
+
+### Q: pselect side-channel 能否替代 KernelSnitch 定位 mm_struct?
+
+**A**: 不能。pselect side-channel 泄漏的是内核栈上的数据（nfulnl_logger 地址），用于 KASLR bypass。mm_struct 在 slab 分配器中，不在内核栈上。pselect 泄漏的数据中不包含 current->mm 指针，无法直接推导出 mm_struct 地址。
 
 ### Q: 为什么 pselect 不能用于栈回收?
 

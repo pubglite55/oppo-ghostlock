@@ -21,12 +21,18 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 到 7.1 的内核栈 UAF
 | GhostLock FUTEX PI 触发 | ✅ **验证成功** | FUTEX_CMP_REQUEUE_PI ret=1 |
 | C ashmem 类型验证 | ✅ 完成 | ashmem_area 312 bytes, name[88] 重叠 |
 | configfs_bin_file_operations | ✅ 找到 | bin_buffer at offset +88 |
-| **mm_struct 地址泄漏** | ❌ **阻塞** | KPTI 导致所有时序方法失败 |
+| **mm_struct 地址泄漏** | ❌ **阻塞** | Kernel 5.10 FUTEX_WAKE_PRIVATE 不遍历 hash chain |
 | **覆盖 ashmem_misc.fops** | ❌ **阻塞** | 依赖 mm_struct 地址 |
 | 类型混淆 (任意读写) | ⏳ 待实现 | 依赖 fops 覆盖 |
 | 提权 (cred + SELinux) | ⏳ 待实现 | 依赖任意读写 |
 
 ### 核心阻塞问题
+
+**KernelSnitch timing 在 kernel 5.10 上完全失效**：
+- `FUTEX_WAKE_PRIVATE val=0` 被优化为不遍历 hash chain（ratio 1.0x，需要 >10x）
+- `FUTEX_CMP_REQUEUE_PI` ratio 1.4x（不够）
+- `FUTEX_TRYLOCK_PI` ratio 1.7x（不够）
+- 所有基于 futex timing 的碰撞检测在 kernel 5.10 上失败
 
 **需要 mm_struct 地址** 来布置 fake kernel page，从而覆盖 `ashmem_misc.fops` 指向 `configfs_bin_file_operations`。没有 mm_struct 地址，类型混淆无法启动。
 

@@ -1,5 +1,25 @@
 # 版本更新日志
 
+## v0.6.0 (2026-07-13)
+
+### ✨ 新增功能
+- KernelSnitch timing 根因分析: 确认 FUTEX_WAKE_PRIVATE val=0 不遍历 hash chain
+- 诊断测试: 验证 FUTEX_CMP_REQUEUE_PI、FUTEX_TRYLOCK_PI timing ratio
+- pselect side-channel 可行性分析
+
+### 🐛 问题修复
+- 修正 ASHMEM_MISC_FOPS_OFF: 0x02c0048 → 0x022c0048 (2MB 偏移错误!)
+- 修正所有函数入口点偏移 (从 IDA 验证)
+- 扩展 identity range 到 16GB (16GB RAM 设备)
+- 启用 KernelSnitch verbose 输出用于调试
+
+### 📝 文档更新
+- 更新 TROUBLESHOOTING.md: 添加 KernelSnitch timing 根因分析
+- 更新 FAQ.md: 添加 pselect side-channel 可行性分析
+- 新增 问题描述.md: 完整问题描述 (发给大佬求助)
+
+---
+
 ## v0.5.0 (2026-07-12)
 
 ### ✨ 新增功能

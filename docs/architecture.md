@@ -116,3 +116,18 @@ waiter 结构 = stack_top - 0x288
 | 344 | 48 | kvmalloc | 堆 |
 
 **结论**: NFDS=344 走堆路径，fd_set 数据不在栈上，fake waiter 数据无法通过 fd_set 写入内核栈。
+
+### PR #13 bypass slide
+
+PR #13 移除了 slide leak 代码，直接使用 `P0_PAGE_OFFSET + P0_KERNEL_PHYS_LOAD` 作为 kernel base。但 pselect 栈覆盖本身仍然不可行。
+
+### NFDS 扫描结果
+
+| NFDS | v17 | 路径 | 结果 |
+|------|-----|------|------|
+| 320 | 40 | 栈缓冲区 | crash — waiter 在 fd_set 下方 120B |
+| 321 | 48 | kvmalloc | crash — fd_set 不在栈上 |
+| 344 | 48 | kvmalloc | crash — fd_set 不在栈上 |
+| 640 | 80 | kvmalloc | crash — fd_set 不在栈上 |
+
+**结论**: 没有 NFDS 值能让 fd_set 覆盖 waiter 位置。需要完全重新设计 slide 机制。

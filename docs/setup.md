@@ -91,7 +91,7 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 |--------|-----|------|
 | `KERNELSNITCH_IDENTITY_START` | `0xffffff8000000000ULL` | direct-map 起始地址 |
 | `KERNELSNITCH_IDENTITY_END` | `0xffffffc000000000ULL` | direct-map 结束地址 (16GB) |
-| `PSELECT_WAITER_WORD_SHIFT` | 1 | waiter word 偏移 |
+| `PSELECT_WAITER_WORD_SHIFT` | 0 | waiter word 偏移 |
 | `P0_PAGE_OFFSET` | `0xffffff8000000000ULL` | 39-bit VA direct map 基址 |
 | `P0_KERNEL_PHYS_LOAD` | `0xa8000000ULL` | XBL firmware verified |
 

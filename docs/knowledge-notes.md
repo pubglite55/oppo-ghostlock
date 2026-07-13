@@ -120,3 +120,12 @@ NFDS=320: size=40 < 42.67 → 栈缓冲区
 NFDS=321: size=48 > 42.67 → kvmalloc
 
 **结论**: NFDS=320 是栈路径最大值，没有 NFDS 值能让 fd_set 覆盖 waiter 位置。
+
+## XBL 内存布局
+
+XBL (eXtensible Boot Loader) 硬编码 `0xa8000000` 作为内核物理加载地址，初始化 DDR 后传给 ABL。
+
+```c
+#define P0_KERNEL_PHYS_LOAD 0xa8000000ULL  // XBL firmware verified
+#define P0_KERNEL_PHYS_DELTA (0xa8000000 - 0x80000000)  // 0x28000000
+```

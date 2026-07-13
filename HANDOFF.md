@@ -14,6 +14,7 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 - **slide pselect 不可行**: waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置
 - **PR #11 merged**: boot_id 数据偏移修正
 - **PR #12 merged**: P0_PAGE_OFFSET 和 P0_KERNEL_PHYS_LOAD 修正
+- **PR #13 merged**: bypass slide，直接使用 direct-map kernel base
 
 ### Current Status
 
@@ -28,7 +29,7 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 | KASLR bypass (slide) | ✅ 工作 | pselect side-channel 泄漏 nfulnl_logger |
 | GhostLock FUTEX PI 触发 | ✅ 工作 | FUTEX_CMP_REQUEUE_PI ret=1 |
 | sk_buff reclaim | ✅ 完成 | 4/4 send 成功 |
-| **slide pselect (栈覆盖)** | ❌ **不可行** | waiter offset 120B — NOT VIABLE |
+| **slide pselect (栈覆盖)** | ❌ **不可行** | waiter offset 120B — NFDS 扫描全部 DEAD |
 | configfs R/W | ❌ **死路** | ashmem strcpy 行为 |
 | pipe physrw | ⏳ 待实现 | 依赖栈覆盖修复 |
 | root (cred + SELinux) | ⏳ 待实现 | 依赖 pipe physrw |
@@ -70,7 +71,20 @@ waiter 结构 = stack_top - 0x288
 
 **`FRONTEND_STACK_ALLOC=256`** 确认阈值为 42.67 bytes，NFDS=320 是栈路径最大值。没有 NFDS 值能让 fd_set 覆盖 waiter 位置。
 
-### 2.3 configfs type confusion (死路)
+### 2.3 NFDS 扫描结果
+
+| NFDS | v17 | 路径 | 结果 |
+|------|-----|------|------|
+| 320 | 40 | 栈缓冲区 | crash — waiter 在 fd_set 下方 120B |
+| 321 | 48 | kvmalloc | crash — fd_set 不在栈上 |
+| 344 | 48 | kvmalloc | crash — fd_set 不在栈上 |
+| 640 | 80 | kvmalloc | crash — fd_set 不在栈上 |
+
+### 2.4 PR #13 bypass slide
+
+PR #13 移除了 slide leak 代码，直接使用 `P0_PAGE_OFFSET + P0_KERNEL_PHYS_LOAD` 作为 kernel base。但 pselect 栈覆盖本身仍然不可行。
+
+### 2.5 configfs type confusion (死路)
 
 **问题**: ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page 地址无法写入
 
@@ -78,58 +92,14 @@ waiter 结构 = stack_top - 0x288
 
 ---
 
-## 3. 文件位置
+## 3. 下一步计划
 
-### 本地机器 (macOS)
-```
-/Users/xiuxiu391/Desktop/oppo/
-├── oppo-ghostlock/                    — 项目仓库
-│   ├── exploit/
-│   │   ├── Makefile                   — 构建脚本
-│   │   ├── src/
-│   │   │   ├── main.c                 — 主入口
-│   │   │   ├── util.c                 — KernelSnitch 设置
-│   │   │   ├── slide.c                — KASLR bypass (pselect)
-│   │   │   ├── fops.c                 — file_operations 利用
-│   │   │   ├── pipe.c                 — pipe 物理读写
-│   │   │   ├── root.c                 — root 提权
-│   │   │   ├── preload.c              — LD_PRELOAD 入口
-│   │   │   ├── common.h               — 公共定义
-│   │   │   └── kernelsnitch/          — KernelSnitch 库
-│   │   ├── targets/oppo-find_n2/      — 设备特定配置
-│   │   │   └── target.h               — 内核偏移量
-│   │   └── test-programs/             — 测试程序
-│   └── docs/                          — 文档
-├── boot.img                           — 原始 boot 镜像 (192MB)
-├── kernel_raw.bin                     — 提取的内核二进制
-└── kernel.elf                         — vmlinux-to-elf 生成的 ELF
-```
+### 优先级 1: 找到不依赖 pselect 栈覆盖的方法
 
----
-
-## 4. 编译与部署
-
-### 编译
-```bash
-cd exploit/
-make NDK=/tmp/ndk_extract/android-ndk-r29
-```
-
-### 部署
-```bash
-adb push preload.so /data/local/tmp/
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-```
-
----
-
-## 5. 下一步计划
-
-### 优先级 1: 修复 slide pselect
-
-当前 slide 机制不可行 (waiter 在 fd_set 数据下方 120 字节)。需要:
-1. 找到其他 syscall 将用户可控数据放置到 waiter 位置
-2. 或重新设计 slide 机制
+当前 slide pselect 不可行。需要:
+1. 分析 sendmsg 的栈布局 (`__sys_sendmsg` 帧大小 0x314)
+2. 或寻找其他 syscall 将用户可控数据放置到 waiter 位置
+3. 或重新设计 GhostLock trigger 机制
 
 ### 优先级 2: 完成 exploit 链
 
@@ -140,39 +110,34 @@ mm_struct 泄漏完成后:
 
 ---
 
-## 6. 参考资料
-
-- 官方 GhostLock writeup: https://nebusec.ai/research/ionstack-part-2/
-- K80U PR #22: https://github.com/NebuSec/CyberMeowfia/pull/22
-- Dere3046 专家建议: "c ashmem更简单 最终应该只需要适配部分就可以复现"
-
----
-
-## 7. 设备信息
+## 4. 设备信息
 
 - **Phone**: OPPO Find N2, serial=84cb96e2
-- **USB**: Connected via adb
 - **Kernel**: 5.10.236-android12-9-o-g74d132f4467a
 - **Build fingerprint**: OPPO/CPH2413/CPH2413:16/UP1A.231005.007/V16.0.12.0.UNFCNXM:user/release-keys
 - **CONFIG_NR_CPUS=32**, possible=0-7, online=8
 - **CONFIG_FUTEX_PI=y** ✓
 - **CONFIG_UNMAP_KERNEL_AT_EL0=y** (KPTI enabled)
 - **kptr_restrict enforced** (/proc/kallsyms denied)
+- **XBL firmware**: `0xa8000000` 内核物理加载地址
 
 ---
 
-## 8. commit 历史
+## 5. commit 历史
 
 ```
-d477f61 Merge pull request #11 (boot_id offset fix)
+92b25d1 feat: skip slide, use direct-map kernel base for pipe physrw
+b012fa3 feat: restore original CyberMeowfia PoC approach with shift=0
+5949e63 docs: add PR #13 analysis report
+f50448f fix: use P0_DATA_ALIAS_CONST for correct direct-map addresses
+8693747 fix: restore correct SLIDE_ addresses for fake payload
+94d111f fix: remove all slide references from fops.c and util.c
+e316565 fix: add SLIDE_ defines and PSELECT_WAITER_WORD_SHIFT
+f0d6a2a revert: restore PR #13 target.h exactly
+69afa14 fix: add back SLIDE_ defines for compilation
+6422b7a Merge pull request #13 (bypass slide)
+a6792e7 docs: update AGENTS.md
+addf8c4 docs: complete documentation system update
 9a80fa4 Merge pull request #12 (slide crash fix)
-09a60ce revert: NFDS 344→320
-2181940 fix: NFDS 320→344 + debug scan address
-ae35e8e debug: bruteforce progress trace
-e639583 fix: forward declaration for __measure
-b3843a1 fix: pile-up verification
-d4a35ae fix: futex_init() roundup_pow2
-5eb9a62 fix: MM_STRUCT_SZ 0x500→0x3c0
-cbc155f fix: KSNITCH_COLLISIONS 4→16
-2b0d29b fix: IDENTITY range fix
+dd6e708 fix slide crash
 ```

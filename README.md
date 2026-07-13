@@ -123,7 +123,8 @@ oppo-ghostlock/
 │   ├── setup.md                       # 环境搭建
 │   ├── best-practice.md               # 最佳实践
 │   ├── knowledge-notes.md             # 技术知识沉淀
-│   └── adaptation-guide.md            # 适配指南
+│   ├── adaptation-guide.md            # 适配指南
+│   └── pr13-analysis.md              # PR #13 分析报告
 └── kernel.elf                         # 分析用内核二进制
 ```
 
@@ -141,6 +142,7 @@ oppo-ghostlock/
 | [最佳实践](docs/best-practice.md) | 开发最佳实践 |
 | [技术知识](docs/knowledge-notes.md) | 技术知识沉淀 |
 | [适配指南](docs/adaptation-guide.md) | GhostLock 适配指南 |
+| [PR #13 分析](docs/pr13-analysis.md) | PR #13 bypass slide 分析 |
 
 ## 已验证的关键地址 (IDA output.elf)
 

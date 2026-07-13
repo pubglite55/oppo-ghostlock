@@ -57,6 +57,7 @@ ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page
 - **KernelSnitch timing works on kernel 5.10** — futex_wake identical across 5.10/5.15/6.1/6.12
 - **PR #11 merged**: boot_id data offset `0x02b99acd` → `0x02b99b6d`
 - **PR #12 merged**: P0_PAGE_OFFSET `0xffffffc000000000` → `0xffffff8000000000`, P0_KERNEL_PHYS_LOAD `0x80000000` → `0xa8000000`
+- **PR #13 merged**: bypass slide, direct-map kernel base
 
 ## Verified Frame Sizes (IDA output.elf)
 
@@ -115,5 +116,6 @@ ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page
 - `HANDOFF.md` — detailed session handoff
 - `docs/architecture.md` — exploit chain diagram
 - `docs/knowledge-notes.md` — SLUB order, rt_mutex_waiter layout
+- `docs/pr13-analysis.md` — PR #13 analysis report
 - NebuSec writeup: https://nebusec.ai/research/ionstack-part-2/
 - CyberMeowfia PoC: https://github.com/NebuSec/CyberMeowfia/blob/main/IonStack/CVE-2026-43499/poc/poc.c

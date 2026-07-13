@@ -20,7 +20,7 @@ adb push preload.so /data/local/tmp/
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 ```
 
-## Current Blockers (2026-07-13)
+## Current Blockers (2026-07-14)
 
 ### BLOCKER 1: slide pselect (栈覆盖) — 不可行
 
@@ -32,7 +32,16 @@ waiter: stack_top - 0x288 (do_select 帧内)
 偏移差: 0x78 (120 bytes)
 ```
 
-fd_set bitmaps 从 stack_top - 0x210 向上增长，无法覆盖 stack_top - 0x288。
+`FRONTEND_STACK_ALLOC=256` 确认阈值为 42.67 bytes，NFDS=320 是栈路径最大值。没有 NFDS 值能让 fd_set 覆盖 waiter 位置。
+
+**NFDS 扫描结果 (全部失败)**:
+
+| NFDS | v17 | 路径 | 结果 |
+|------|-----|------|------|
+| 320 | 40 | 栈缓冲区 | crash — waiter 在 fd_set 下方 120B |
+| 321 | 48 | kvmalloc | crash — fd_set 不在栈上 |
+| 344 | 48 | kvmalloc | crash — fd_set 不在栈上 |
+| 640 | 80 | kvmalloc | crash — fd_set 不在栈上 |
 
 ### BLOCKER 2: configfs type confusion — DEAD
 
@@ -42,10 +51,12 @@ ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page
 
 - **`TARGET_CONFIG_H` is mandatory** — offset.h errors without it. Pass as `-D` string literal.
 - **Frame sizes in repo are WRONG** — must use IDA-verified values (see table below)
-- **NDK must be r29 with `aarch64-linux-android28-clang`** — android35 causes shadow stack OOM
+- **NDK must be r29 with `aarch64-linux-android35-clang`** — android35 causes shadow stack OOM
 - **device has no root** — cannot use strace, kallsyms, dmesg
 - **Firefox 151 required** — CVE-2026-10702 only exists in version 51.0
 - **KernelSnitch timing works on kernel 5.10** — futex_wake identical across 5.10/5.15/6.1/6.12
+- **PR #11 merged**: boot_id data offset `0x02b99acd` → `0x02b99b6d`
+- **PR #12 merged**: P0_PAGE_OFFSET `0xffffffc000000000` → `0xffffff8000000000`, P0_KERNEL_PHYS_LOAD `0x80000000` → `0xa8000000`
 
 ## Verified Frame Sizes (IDA output.elf)
 
@@ -66,6 +77,8 @@ ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page
 
 | Method | Why it failed |
 |--------|---------------|
+| NFDS=320 | waiter 在 fd_set 下方 120B，无法覆盖 |
+| NFDS=321-640 | 走 kvmalloc 路径，fd_set 不在栈上 |
 | pselect fd_set on stack | set_fd_set()→bitmap_alloc(), fd_set on heap not stack |
 | configfs type confusion | ashmem strcpy, kernel addr LE first byte is NUL |
 | pselect for mm_struct | leaks kernel stack data, not slab data |
@@ -92,7 +105,7 @@ ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page
 | GhostLock FUTEX PI trigger | ✅ Working | FUTEX_CMP_REQUEUE_PI ret=1 |
 | KernelSnitch mm_struct leak | ✅ **Working** | bruteforce found mm_struct |
 | sk_buff reclaim | ✅ Working | 4/4 send success |
-| slide pselect crash | ❌ **BLOCKED** | waiter offset 120 bytes — NOT VIABLE |
+| slide pselect crash | ❌ **NOT VIABLE** | waiter offset 120 bytes — NFDS sweep confirmed no solution |
 | configfs R/W | ❌ **DEAD** | ashmem strcpy behavior |
 | pipe physrw | ⏳ Pending | depends on stack cover fix |
 | root (cred + SELinux) | ⏳ Pending | depends on pipe physrw |

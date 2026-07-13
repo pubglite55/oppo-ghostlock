@@ -27,7 +27,7 @@ type: fix / feat / debug / revert / docs
 
 示例:
 ```
-fix: IDENTITY range 0xffffffc0-0xffffffc4 → 0xffffff80-0xffffffc0
+fix: IDENTITY range 0xffffffc0-ffffffc4 → 0xffffff80-ffffffc0
 fix: KSNITCH_COLLISIONS 4 → 16 for better bruteforce selectivity
 fix: MM_STRUCT_SZ 0x500 → 0x3c0 (pahole verified)
 fix: pile-up verification — yield 16 times + measure timing
@@ -74,7 +74,6 @@ bucket = futex_hash(addr, mm) & (futex_hashsize - 1)
 ```c
 for (size_t i = 0; i < 16; ++i) sched_yield();
 size_t approx_time = __measure((size_t)&ks->inc_futex[id]);
-if (ks->verbose) pr_info("pile-up verified: approx_time=%zu\n", approx_time);
 ```
 
 **效果**: pile-up ratio 从 1.0x 提升到 ~120x

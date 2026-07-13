@@ -69,8 +69,8 @@
 **输出**: kernel base address
 
 **关键符号**:
-- `SLIDE_NFULNL_LOGGER_OFF=0x027c1418` — 泄漏目标
-- `SLIDE_RANDOM_BOOT_ID_DATA_OFF=0x02b99acd` — boot_id 数据
+- `SLIDE_NFULNL_LOGGER_OFF=0x027c14b8` — 泄漏目标
+- `SLIDE_RANDOM_BOOT_ID_DATA_OFF=0x02b99b6d` — boot_id 数据
 
 ### 3. GhostLock FUTEX PI trigger
 
@@ -95,7 +95,7 @@ waiter 结构 = stack_top - 0x288
 
 **根因**: waiter 在 fd_set 数据**下方** 120 字节。fd_set bitmaps 从 stack_top - 0x210 开始向**上**增长，无法覆盖到 stack_top - 0x288 的 waiter 位置。
 
-**结论**: slide 机制在 OPPO Find N2 上不可行，因为 waiter 在 fd_set 数据下方，fd_set bitmaps 无法到达 waiter 位置。
+**`FRONTEND_STACK_ALLOC=256`** 确认阈值为 42.67 bytes，NFDS=320 是栈路径最大值。没有 NFDS 值能让 fd_set 覆盖 waiter 位置。
 
 ## 技术选型说明
 

@@ -22,7 +22,7 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 到 7.1 的内核栈 UAF
 | GhostLock FUTEX PI 触发 | ✅ 完成 | FUTEX_CMP_REQUEUE_PI ret=1 |
 | KernelSnitch mm_struct 泄漏 | ✅ 完成 | pile-up ✅, hashsize ✅, bruteforce ✅ |
 | sk_buff reclaim | ✅ 完成 | 4/4 send 成功 |
-| slide pselect (栈覆盖) | ❌ **不可行** | waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置 |
+| slide pselect (栈覆盖) | ❌ **阻塞** | waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置 |
 | pipe physrw | ⏳ 待实现 | 依赖栈覆盖修复 |
 | root (cred + SELinux) | ⏳ 待实现 | 依赖 pipe physrw |
 

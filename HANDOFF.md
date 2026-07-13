@@ -1,6 +1,6 @@
 # GhostLock OPPO Find N2 Exploit — Session Handoff
 
-**Date**: 2026-07-13 (Updated)
+**Date**: 2026-07-14 (Updated)
 **Device**: OPPO Find N2 (SM8475/CPH2413), Android 16, Kernel 5.10.236
 **Project**: https://github.com/pubglite55/oppo-ghostlock/
 
@@ -12,6 +12,8 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 
 - **KernelSnitch 已完全修复**: pile-up ✅, hashsize ✅, IDENTITY range ✅, bruteforce ✅
 - **slide pselect 不可行**: waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置
+- **PR #11 merged**: boot_id 数据偏移修正
+- **PR #12 merged**: P0_PAGE_OFFSET 和 P0_KERNEL_PHYS_LOAD 修正
 
 ### Current Status
 
@@ -22,11 +24,11 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 | futex_hashsize | ✅ 已修复 | 2048 (8 CPUs * 256) + roundup_pow_of_two |
 | KernelSnitch pile-up 验证 | ✅ 已修复 | yield 16 次 + timing 测量 |
 | KernelSnitch IDENTITY range | ✅ 已修复 | 0xffffff80-0xffffffc0 (direct-map) |
-| KernelSnitch bruteforce | ✅ **成功** | mm_struct=0xffffff8928d6e180 |
+| KernelSnitch bruteforce | ✅ **成功** | mm_struct=0xffffff89807912c0 |
 | KASLR bypass (slide) | ✅ 工作 | pselect side-channel 泄漏 nfulnl_logger |
 | GhostLock FUTEX PI 触发 | ✅ 工作 | FUTEX_CMP_REQUEUE_PI ret=1 |
 | sk_buff reclaim | ✅ 完成 | 4/4 send 成功 |
-| **slide pselect (栈覆盖)** | ❌ **不可行** | waiter offset mismatch 120 bytes |
+| **slide pselect (栈覆盖)** | ❌ **不可行** | waiter offset 120B — NOT VIABLE |
 | configfs R/W | ❌ **死路** | ashmem strcpy 行为 |
 | pipe physrw | ⏳ 待实现 | 依赖栈覆盖修复 |
 | root (cred + SELinux) | ⏳ 待实现 | 依赖 pipe physrw |
@@ -38,7 +40,7 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 ### 2.1 KernelSnitch 修复 (已验证)
 
 **修复清单**:
-1. IDENTITY range: `0xffffffc0-0xffffffc4` → `0xffffff80-0xffffffc0`
+1. IDENTITY range: `0xffffffc0-ffffffc4` → `0xffffff80-ffffffc0`
 2. KSNITCH_COLLISIONS: 4 → 16
 3. MM_STRUCT_SZ: 0x500 → 0x3c0
 4. hashsize alignment: 添加 `roundup_pow2`
@@ -47,16 +49,9 @@ GhostLock (CVE-2026-43499) exploit chain targeting OPPO Find N2 is **stalled at 
 **设备验证结果**:
 ```
 [*] parameters cpu (16) mm_struct sz (3c0) mm slab order (3) thread cnt (8) collisions (16)
-[*] pile-up verified: approx_time=2796
-[*] start finding collisisons
-[*] target    000000743c78a0c8
-[*]   ...15 collision addresses...
+[*] pile-up verified: approx_time=2673
 [*] found 15 collisisons
-[*] start bruteforcing
-[*] prepare_kernel_page leaked_mm=ffffff8928d6e180 base=ffffff8928d68000 mode=1
-[*] sk_buff reclaim send 1/4 ret=65536 errno=0
-[*] sk_buff reclaim send 2/4 ret=65536 errno=0
-[*] sk_buff reclaim send 3/4 ret=65536 errno=0
+[*] leaked_mm=ffffff89807912c0 base=ffffff8980790000
 [*] sk_buff reclaim send 4/4 ret=65536 errno=0
 ```
 
@@ -73,9 +68,7 @@ waiter 结构 = stack_top - 0x288
 偏移差 = 0x288 - 0x210 = 0x78 (120 bytes)
 ```
 
-**根因**: waiter 在 fd_set 数据**下方** 120 字节。fd_set bitmaps 从 stack_top - 0x210 开始向**上**增长，无法覆盖到 stack_top - 0x288 的 waiter 位置。
-
-**结论**: slide 机制在 OPPO Find N2 上不可行。
+**`FRONTEND_STACK_ALLOC=256`** 确认阈值为 42.67 bytes，NFDS=320 是栈路径最大值。没有 NFDS 值能让 fd_set 覆盖 waiter 位置。
 
 ### 2.3 configfs type confusion (死路)
 
@@ -132,11 +125,11 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 
 ## 5. 下一步计划
 
-### 优先级 1: 解决 slide pselect 问题
+### 优先级 1: 修复 slide pselect
 
-当前 slide 机制不可行，需要:
-1. 找到其他可控内核栈的系统调用
-2. 或重新设计 waiter 覆盖方式
+当前 slide 机制不可行 (waiter 在 fd_set 数据下方 120 字节)。需要:
+1. 找到其他 syscall 将用户可控数据放置到 waiter 位置
+2. 或重新设计 slide 机制
 
 ### 优先级 2: 完成 exploit 链
 
@@ -171,7 +164,9 @@ mm_struct 泄漏完成后:
 ## 8. commit 历史
 
 ```
-09a60ce revert: NFDS 344→320 (kvmalloc path doesn't help — waiter is BELOW fd_set data)
+d477f61 Merge pull request #11 (boot_id offset fix)
+9a80fa4 Merge pull request #12 (slide crash fix)
+09a60ce revert: NFDS 344→320
 2181940 fix: NFDS 320→344 + debug scan address
 ae35e8e debug: bruteforce progress trace
 e639583 fix: forward declaration for __measure

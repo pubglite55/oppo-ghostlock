@@ -28,7 +28,6 @@ plist_for_each_entry_safe(this, next, &hb->chain, list) {
 | `__arm64_sys_pselect6` | 0x90 | **0xA0** | `SUB SP,SP,#0xA0` |
 | `core_sys_select` | 0x1D0 | **0x1C0** | `SUB SP,SP,#0x1C0` |
 | `do_select` | 0x390 | **0x3C0** | `STP+0x60` + `SUB+0x360` |
-| `binder_ioctl` | 0xF0 | **0xD0** | `SUB SP,SP,#0xD0` |
 
 ## rt_mutex_waiter 结构布局
 
@@ -103,3 +102,21 @@ OPPO Find N2 (serial=84cb96e2) 无法获取 kernel panic 日志:
 - `adb shell dmesg` → `klogctl: Permission denied` (SELinux deny syslog_read)
 - `/sys/fs/pstore/` → 空目录, 无 ramdump 文件
 - logcat 无 kernel panic 相关日志
+
+## `FRONTEND_STACK_ALLOC=256` 确认
+
+内核源码:
+```c
+#define SELECT_STACK_ALLOC 256
+long stack_fds[SELECT_STACK_ALLOC/sizeof(long)];  // 256/8 = 32 longs
+
+size = FDS_BYTES(n);
+if (size > sizeof(stack_fds) / 6) {  // threshold = 256/6 ≈ 42.67
+    bits = kvmalloc(6 * size, GFP_KERNEL);
+}
+```
+
+NFDS=320: size=40 < 42.67 → 栈缓冲区
+NFDS=321: size=48 > 42.67 → kvmalloc
+
+**结论**: NFDS=320 是栈路径最大值，没有 NFDS 值能让 fd_set 覆盖 waiter 位置。

@@ -70,6 +70,10 @@ mm_struct 由 slab 分配器在 direct-map 范围中分配。ARM64 39-bit VA 的
 
 内核使用 `roundup_pow_of_two(nr_cpu_ids * 256)` 计算 hashsize。用户态必须匹配内核行为，否则 hash bucket 不一致。
 
+### Q: slide pselect 为什么不可行？
+
+waiter 在 stack_top-0x288，fd_set 数据在 stack_top-0x210，偏移差 120 字节。fd_set bitmaps 从 stack_top-0x210 向上增长，无法覆盖 waiter 位置。没有 NFDS 值能解决这个问题。
+
 ---
 
 ## 部署类

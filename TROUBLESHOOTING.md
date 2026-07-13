@@ -25,7 +25,7 @@ make  # 不指定 TARGET_CONFIG_H
 
 **解决方案**:
 
-最终修复方案: Makefile 中自动定义 `TARGET_CONFIG_H`:
+Makefile 中自动定义 `TARGET_CONFIG_H`:
 ```makefile
 CFLAGS = ... -DTARGET_CONFIG_H='"$(TARGET_DIR)/target.h"'
 ```
@@ -42,12 +42,6 @@ CFLAGS = ... -DTARGET_CONFIG_H='"$(TARGET_DIR)/target.h"'
 ```
 error: implicit declaration of function '__measure'
 note: previous implicit declaration is here
-```
-
-**复现步骤**:
-```bash
-# 修改 __increase() 添加 pile-up verification 后编译
-make clean && make NDK=/tmp/ndk_extract/android-ndk-r29
 ```
 
 **解决方案**:
@@ -94,12 +88,6 @@ make NDK=/tmp/ndk_extract/android-ndk-r29
 [-] KernelSnitch mm_struct leak failed
 ```
 
-**复现步骤**:
-```bash
-# 使用旧的 target.h (IDENTITY_START=0xffffffc000000000)
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-```
-
 **排查思路**:
 1. 检查 `target.h` 中的 `KERNELSNITCH_IDENTITY_START/END`
 2. 确认 mm_struct 实际地址范围 (设备测试: `0xffffff89...`)
@@ -125,11 +113,6 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 ```
 [*] pile-up verified: approx_time=260 baseline=260 ratio=1.0
 ```
-
-**排查思路**:
-1. 检查 `WAIT()` 宏的 yield 次数
-2. 验证线程是否全部进入 `FUTEX_WAIT_PRIVATE`
-3. 测量 pile-up timing
 
 **解决方案**:
 
@@ -198,8 +181,6 @@ futex_hashsize = result;
 
 ---
 
-## 功能异常类
-
 ### 8. 碰撞检测假阳性
 
 **触发场景**: timing 测量不可靠，高 timing 不来自 hash bucket 碰撞
@@ -209,11 +190,6 @@ futex_hashsize = result;
 // "同 bucket" addr timing=57 (3.0x)
 // "不同 bucket" addr timing=145 (7.6x) — 完全反直觉
 ```
-
-**排查思路**:
-1. 独立测量 timing (`test_isolated_measure.c`)
-2. 验证碰撞候选是否在同一 bucket
-3. 分析高 timing 的真正原因
 
 **解决方案**:
 
@@ -246,9 +222,29 @@ futex_hashsize = result;
 
 ---
 
+## 功能异常类
+
+### 10. slide pselect 走 kvmalloc 路径
+
+**触发场景**: NFDS ≥ 321 导致 v17 ≥ 43
+
+**完整报错信息**:
+```
+[*] slide pselect before fd install nfds=640
+// 然后设备重启
+```
+
+**解决方案**:
+
+保持 NFDS ≤ 320 (栈路径)，但 waiter 偏移问题仍然存在。
+
+**根因分析**: `FRONTEND_STACK_ALLOC=256` 确认阈值为 42.67 bytes。NFDS=320 是栈路径最大值。
+
+---
+
 ## 性能问题类
 
-### 10. bruteforce 耗时过长
+### 11. bruteforce 耗时过长
 
 **触发场景**: IDENTITY 范围过大 (16GB) 或碰撞数不足
 

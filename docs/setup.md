@@ -92,6 +92,8 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 | `KERNELSNITCH_IDENTITY_START` | `0xffffff8000000000ULL` | direct-map 起始地址 |
 | `KERNELSNITCH_IDENTITY_END` | `0xffffffc000000000ULL` | direct-map 结束地址 (16GB) |
 | `PSELECT_WAITER_WORD_SHIFT` | 1 | waiter word 偏移 |
+| `P0_PAGE_OFFSET` | `0xffffff8000000000ULL` | 39-bit VA direct map 基址 |
+| `P0_KERNEL_PHYS_LOAD` | `0xa8000000ULL` | XBL firmware verified |
 
 ### common.h 配置
 
@@ -101,16 +103,6 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 | `MM_ORDER` | 3 | SLUB order (32KB slab) |
 | `KSNITCH_COLLISIONS` | 16 | 碰撞搜索目标数 |
 | `PSELECT_ROUTE_NFDS` | 320 | pselect NFDS 值 |
-
-### 环境变量
-
-| 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `SLIDE_ENTER_DELAY_USEC` | 50000 | slide 进入延迟 (微秒) |
-| `SLIDE_CONSUME_DELAY` | 2000 | slide 消费延迟 |
-| `SLIDE_CONSUME_USEC` | 0 | slide 消费微秒 |
-| `SLIDE_WAIT_SECONDS` | 30 | slide 等待超时 (秒) |
-| `SLIDE_FAKE_TASK` | 0 | 使用 fake task (1=启用) |
 
 ## 升级与回滚
 

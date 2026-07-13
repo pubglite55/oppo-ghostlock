@@ -1,194 +1,118 @@
-# 架构设计文档
+# GhostLock 架构设计
 
 ## 设计理念
 
-本项目基于 [NebuSec CyberMeowfia](https://github.com/NebuSec/CyberMeowfia) 的 exploit 架构，针对 OPPO Find N2 设备进行适配。核心设计原则：
+本项目基于 NebuSec CyberMeowfia 的 GhostLock exploit chain，针对 OPPO Find N2 (SM8475, kernel 5.10.236) 进行适配。核心设计原则：
 
-1. **模块化** — exploit 链分为独立阶段，每个阶段可单独测试
-2. **设备适配** — 通过 `target.h` 隔离设备特定偏移
-3. **防御规避** — 绕过 KPTI、SELinux、kptr_restrict 等安全机制
+1. **IDA 验证优先** — 所有内核偏移必须通过 IDA output.elf 验证，不信任仓库默认值
+2. **独立可测试** — 每个阶段可单独编译测试
+3. **设备验证驱动** — 所有修复必须在真实设备上验证
 
 ## 整体架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Exploit Chain (6 stages)                   │
+│                    Exploit Chain (6 stages)                  │
 ├─────────────────────────────────────────────────────────────┤
 │ Stage 1: Firefox CVE-2026-10702                             │
 │   SpiderMonkey type confusion → fake TypedArray → AAW       │
 ├─────────────────────────────────────────────────────────────┤
-│ Stage 2: KASLR Bypass (slide)                               │
-│   pselect fd_set → fake fops → boot_id leak → kernel base  │
+│ Stage 2: KASLR bypass (slide/pselect)                       │
+│   pselect side-channel → leak nfulnl_logger → kernel base   │
 ├─────────────────────────────────────────────────────────────┤
-│ Stage 3: mm_struct Leak (KernelSnitch)                      │
-│   futex hash collision → timing side-channel → mm_struct    │
+│ Stage 3: mm_struct leak (KernelSnitch)                      │
+│   futex hash timing → bruteforce direct-map → mm_struct     │
 ├─────────────────────────────────────────────────────────────┤
-│ Stage 4: GhostLock Trigger                                  │
-│   FUTEX_CMP_REQUEUE_PI → dangling pi_blocked_on → fops     │
+│ Stage 3.5: sk_buff reclaim                                  │
+│   fake payload → reclaim kernel page                        │
 ├─────────────────────────────────────────────────────────────┤
-│ Stage 5: Pipe Physical R/W                                  │
-│   pipe_buffer manipulation → physical read/write            │
+│ Stage 3.5: slide pselect (栈覆盖) ← ❌ 当前阻塞            │
+│   waiter offset mismatch → kernel panic                     │
 ├─────────────────────────────────────────────────────────────┤
-│ Stage 6: Root (cred + SELinux)                              │
-│   patch cred → disable seccomp → disable SELinux            │
+│ Stage 4: configfs R/W ← ❌ DEAD (ashmem strcpy)            │
+├─────────────────────────────────────────────────────────────┤
+│ Stage 5: pipe physrw → Stage 6: root                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## 核心模块详解
 
-### 1. KernelSnitch (mm_struct 泄漏)
+### 1. KernelSnitch (futex hash timing)
 
-**功能**: 通过 futex hash table 碰撞泄漏内核 mm_struct 地址
+**功能**: 通过 futex hash 碰撞检测泄漏内核 mm_struct 地址
 
-**原理**:
-- Linux futex hash table 的 key 包含进程的 `mm_struct` 指针
-- 通过制造 futex hash 碰撞，观察包含 `mm_struct` 的内存区域
-- 用时序侧信道 (cache timing) 暴力搜索 2GB direct map 范围
-
-**输入**: futex_hashsize=2048, MM_STRUCT_SZ=0x3c0, MM_ORDER=3
+**输入**: 4096 个线程在 futex bucket 128 上堆积 (pile-up)
 **输出**: mm_struct 内核地址
-**依赖**: CONFIG_FUTEX_PI=y
 
-**当前状态**: ❌ KPTI 启用导致时序不准确
+**关键实现**:
+- `kernelsnitch.h` — pile-up 创建 + 碰撞检测 + bruteforce
+- `futex_hash.h` — Jenkins jhash2, futex_key_t union, futex_init()
+- `timeutils.h` — ARM `mrs cntvct_el0` with ISB barriers
 
-### 2. GhostLock 触发
+**流程**:
+1. `__increase(ks, ID=128, 4096)` — 4096 线程 `FUTEX_WAIT_PRIVATE` on bucket 128
+2. `kernelsnitch_find_collisions()` — 扫描其他 futex 地址, 测量 `FUTEX_WAKE_PRIVATE` timing
+3. `kernelsnitch_bruteforce()` — 测试每个 mm_struct 候选, 用 `futex_hash(addr, candidate_mm)` 验证
 
-**功能**: 通过 FUTEX_CMP_REQUEUE_PI 竞争条件创建 dangling pi_blocked_on 指针
+**已修复的 bug**:
+- pile-up verification: 添加 atomic counter + timing 验证
+- hashsize alignment: `roundup_pow2(nr_cpu_ids * 256)` 匹配内核
+- IDENTITY range: `0xffffff80-0xffffffc0` (direct-map, 非 kernel image)
+- KSNITCH_COLLISIONS: 4 → 16
+- MM_STRUCT_SZ: 0x500 → 0x3c0
 
-**原理**:
-1. Thread A (waiter) 调用 `FUTEX_WAIT_REQUEUE_PI` 并阻塞
-2. Thread B (owner) 调用 `FUTEX_LOCK_PI` 锁定目标
-3. Main thread 调用 `FUTEX_CMP_REQUEUE_PI` 触发竞争
-4. `remove_waiter()` 清除 `current->pi_blocked_on` 而非 `waiter->task->pi_blocked_on`
-5. waiter 的 `pi_blocked_on` 变成悬空指针
+### 2. KASLR bypass (slide/pselect)
 
-**输入**: 3 个 futex words (f_wait, f_pi_target, f_pi_chain)
-**输出**: dangling pi_blocked_on 指针
-**已验证**: ✅ FUTEX_CMP_REQUEUE_PI ret=1
+**功能**: 利用 pselect side-channel 泄漏内核地址，推导 kernel base
 
-### 3. Fake Kernel Page 布置
+**输入**: fd_set bitmaps with fake waiter words
+**输出**: kernel base address
 
-**功能**: 在 SLUB slab 中布置伪造的内核数据结构
+**关键符号**:
+- `SLIDE_NFULNL_LOGGER_OFF=0x027c1418` — 泄漏目标
+- `SLIDE_RANDOM_BOOT_ID_DATA_OFF=0x02b99acd` — boot_id 数据
 
-**原理**:
-- 使用 SKB payload 通过 sendmsg 发送到内核
-- SKB 数据落在 order-3 slab (32KB) 中
-- 在 slab 中布置 fake_lock, fake_fops, fake_task 等结构
-- fake_lock 的 right 指针指向 `ashmem_misc.fops`
+### 3. GhostLock FUTEX PI trigger
 
-**输入**: mm_struct 地址 (用于计算 slab 基址)
-**输出**: fake kernel page at known address
-**当前状态**: ❌ 需要 mm_struct 地址
+**功能**: 通过 FUTEX_CMP_REQUEUE_PI 触发 rtmutex PI chain walk
 
-### 4. 类型混淆 (C ashmem)
+**触发条件**:
+- 3 futex words + 3 threads → PI 依赖循环 → -EDEADLK → 错误回滚
+- `remove_waiter()` 清除 `current->pi_blocked_on` 而非 `waiter->task->pi_blocked_on`
 
-**功能**: 通过 ashmem/configfs 类型混淆实现任意内核读写
+### 4. slide pselect (栈覆盖) ← 当前阻塞
 
-**原理**:
-1. GhostLock 覆盖 `ashmem_misc.fops` → 指向 `configfs_bin_file_operations`
-2. 打开 `/dev/ashmem` → 内核分配 `ashmem_area` 到 `file->private_data`
-3. `ASHMEM_SET_NAME` 写入 name[88] → 控制 `configfs_buffer.bin_buffer` 指针
-4. 调用 read/write → 内核通过 `bin_buffer` 执行任意读写
+**问题**: waiter 偏移错位 120 字节
 
-**关键结构重叠**:
+**精确偏移计算 (IDA 验证)**:
 ```
-ashmem_area + 0x88 (name[88])  ↔  configfs_buffer + 0x58 (bin_buffer)
+pselect 帧链: pselect6(0xA0) + core_sys_select(0x1C0) + do_select(0x3C0) = 0x620
+core_sys_select SP = stack_top - 0x260
+fd_set 数据 (v35) = SP + 0x50 = stack_top - 0x210
+waiter 结构 = stack_top - 0x288
+偏移差 = 0x288 - 0x210 = 0x78 (120 bytes)
 ```
 
-**当前状态**: ✅ 理论可行 (C ashmem 已验证)
+**根因**: waiter 在 fd_set 数据**下方** 120 字节。fd_set bitmaps 从 stack_top - 0x210 开始向**上**增长，无法覆盖到 stack_top - 0x288 的 waiter 位置。
 
-### 5. Pipe 物理读写
-
-**功能**: 通过 pipe_buffer 实现物理内存读写
-
-**原理**:
-- 修改 pipe_buffer 的 page 指针指向 direct map
-- 通过 pipe read/write 操作物理内存
-
-**输入**: 任意内核读写 (来自类型混淆)
-**输出**: 物理内存读写能力
-**当前状态**: ⏳ 依赖类型混淆
-
-### 6. Root 提权
-
-**功能**: 修改 cred 结构体和 SELinux 状态实现 root
-
-**原理**:
-- 遍历 `init_task.tasks` 找到当前进程
-- 修改 `cred.uid=0`, `cred.capabilities=FULL`, `cred.security.SID=1`
-- 清除 seccomp, 禁用 SELinux enforcing
-
-**输入**: 任意内核读写
-**输出**: root 权限
-**当前状态**: ⏳ 依赖 pipe 物理读写
-
-## 核心业务流程
-
-```
-1. Firefox exploit → preload.so (LD_PRELOAD)
-   ↓
-2. KernelSnitch → 泄漏 mm_struct 地址
-   ↓
-3. prepare_kernel_page() → 布置 fake kernel page
-   ↓
-4. FUTEX_CMP_REQUEUE_PI → 触发 GhostLock
-   ↓
-5. pselect → 操纵内核栈 → 覆盖 ashmem_misc.fops
-   ↓
-6. 打开 /dev/ashmem → 类型混淆 → 任意读写
-   ↓
-7. pipe physrw → 物理内存读写
-   ↓
-8. patch cred → root
-```
+**结论**: slide 机制在 OPPO Find N2 上不可行，因为 waiter 在 fd_set 数据下方，fd_set bitmaps 无法到达 waiter 位置。
 
 ## 技术选型说明
 
-| 技术 | 选型原因 | 替代方案 |
-|------|---------|---------|
-| GhostLock (CVE-2026-43499) | 影响范围广 (Linux 2.6.39-7.1)，Android 设备普遍受影响 | 无 |
-| FUTEX_CMP_REQUEUE_PI | GhostLock 的触发入口，无需特殊权限 | 无 |
-| C ashmem | name[88] 与 configfs_buffer.bin_buffer 重叠，可实现类型混淆 | Rust ashmem 不可用 |
-| configfs_bin_file_operations | read_iter/write_iter 使用 bin_buffer 指针，可实现任意读写 | 其他 fops (需验证) |
-| pselect stack reclaim | 利用内核栈重用写入 waiter 位置 | sendmsg cmsg (待验证) |
+### KernelSnitch vs pselect side-channel
 
-## 关键数据结构
+| 方法 | 泄漏数据 | 可用性 |
+|------|----------|--------|
+| pselect side-channel | 内核栈数据 (nfulnl_logger) | ✅ 用于 KASLR bypass |
+| KernelSnitch | slab 数据 (mm_struct) | ✅ 用于 mm_struct 泄漏 |
 
-### rt_mutex_waiter (pahole 验证)
+**选择 KernelSnitch 的原因**: mm_struct 在 slab 分配器中，不在内核栈上，pselect 无法直接泄漏。
 
-```c
-struct rt_mutex_waiter {
-    +0x00: rb_node tree_entry;      // 24 bytes
-    +0x18: rb_node pi_tree_entry;   // 24 bytes
-    +0x30: struct task_struct *task; // 8 bytes
-    +0x38: struct rt_mutex_base *lock; // 8 bytes
-    +0x40: int prio;                // 4 bytes
-    +0x48: u64 deadline;            // 8 bytes
-};  // 总计 80 bytes
-```
+### NFDS 选择
 
-### ashmem_area (IDA 验证)
+| NFDS | v17 | 路径 | fd_set 位置 |
+|------|-----|------|-------------|
+| 320 | 40 | 栈缓冲区 (v35) | 内核栈 SP+0x50 |
+| 344 | 48 | kvmalloc | 堆 |
 
-```c
-struct ashmem_area {               // 312 bytes (C ashmem)
-    +0x00: char name[256];         // ASHMEM_SET_NAME 写入
-    +0x88: name[88]                // 与 configfs_buffer.bin_buffer 重叠!
-    +0x110: struct list_head unpinned;
-    +0x130: size_t size;
-};
-```
-
-### configfs_buffer (IDA 验证)
-
-```c
-struct configfs_buffer {           // 128 bytes
-    +0x20: struct mutex mutex;
-    +0x50: bool needs_fill;
-    +0x58: void *bin_buffer;       // 与 ashmem_area.name[88] 重叠!
-    +0x60: unsigned int bin_buffer_size;
-    +0x68: unsigned int cb_max_size;
-    +0x70: struct configfs_dirent *sd;
-    +0x78: struct module *module;
-    +0x88: struct configfs_bin_operations *cb;
-};
-```
+**结论**: NFDS=344 走堆路径，fd_set 数据不在栈上，fake waiter 数据无法通过 fd_set 写入内核栈。

@@ -8,112 +8,99 @@ Security research project exploiting GhostLock (CVE-2026-43499), a Linux kernel 
 
 ```bash
 cd exploit/
-make                    # 自动检测 NDK
-make NDK=/path/to/ndk   # 指定 NDK 路径
+make NDK=/tmp/ndk_extract/android-ndk-r29   # REQUIRED: android35 has shadow stack OOM
 ```
 
 Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
 
-## ⚠️ 关键适配要求 (Critical Adaptation Requirements)
+## Deploy & Test
 
-### 1. 栈覆盖必须用户可控
+```bash
+adb push preload.so /data/local/tmp/
+adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
+```
 
-**这是最关键的问题。** exploit 需要覆盖被释放的内核栈，且该栈必须在用户空间可控。
+## Current Blockers (2026-07-13)
 
-- Pixel 10 能成功是因为 pselect 的 `stack_fds` 正好和 `rt_waiter` 在内核栈上重合
-- **简单适配偏移是不可能成功的！** 如果目标内核的栈布局不重合，或重合但不可控，必须找其他可控内核栈的系统调用
+### BLOCKER 1: slide pselect (栈覆盖) — 不可行
 
-**已验证失败的方法 (OPPO Find N2):**
+**根因**: waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置。
 
-| 方法 | 结果 | 原因 |
-|------|------|------|
-| pselect (任意 NFDS) | fd_set 在堆上 | set_fd_set()→bitmap_alloc(), 用户数据不在栈上 |
-| binder ioctl | EACCES | shell 用户无权限 |
-| process_vm_readv | 帧仅 160B | 太浅 |
-| PR_SET_MM_MAP | EPERM | Android 阻止 |
-| poll | pollfd 在堆上 | kmalloc 分配, 用户数据不在栈上 |
-| epoll_wait | 帧仅 0xE0 | 太浅 |
+```
+fd_set 数据: stack_top - 0x210 (core_sys_select SP+0x50)
+waiter: stack_top - 0x288 (do_select 帧内)
+偏移差: 0x78 (120 bytes)
+```
 
-**下一个候选**: sendmsg — __sys_sendmsg 帧 0x314, 复制 cmsg 从用户到内核栈
+fd_set bitmaps 从 stack_top - 0x210 向上增长，无法覆盖 stack_top - 0x288。
 
-**关键帧大小 (IDA output.elf 验证, 2026-07-12):**
+### BLOCKER 2: configfs type confusion — DEAD
 
-| 函数 | 帧大小 |
-|------|--------|
-| __arm64_sys_futex | 0x90 (144B) |
-| do_futex | 0x70 (112B) |
-| futex_wait_requeue_pi | 0x1a0 (416B) |
-| **总栈深** | **0x300 (768B)** |
-| **waiter 距栈顶** | **0x288 (648B)** |
+ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page 地址无法写入。
 
-### 2. 结构体差异
+## Key Gotchas
 
-- **5 系内核 vs 6 系内核**: `rt_mutex_waiter`、`task_struct` 等结构体布局不同
-- **mm_struct 地址偏移**: 不同机型和内核版本必须用 pahole 精确提取
-- **不能假设偏移相同** — 即使是同一主线版本，不同厂商的配置也可能不同
+- **`TARGET_CONFIG_H` is mandatory** — offset.h errors without it. Pass as `-D` string literal.
+- **Frame sizes in repo are WRONG** — must use IDA-verified values (see table below)
+- **NDK must be r29 with `aarch64-linux-android28-clang`** — android35 causes shadow stack OOM
+- **device has no root** — cannot use strace, kallsyms, dmesg
+- **Firefox 151 required** — CVE-2026-10702 only exists in version 51.0
+- **KernelSnitch timing works on kernel 5.10** — futex_wake identical across 5.10/5.15/6.1/6.12
 
-### 3. 适配难度评估
+## Verified Frame Sizes (IDA output.elf)
 
-| 内核类型 | 适配难度 | 说明 |
-|----------|----------|------|
-| 同主线版本 | 低 | 改函数和结构偏移即可 |
-| 同主线 + 相同配置 | 中 | 需要验证栈布局 |
-| 非同主线版本 | **高** | 需要重新分析栈覆盖方法 |
-| 厂商深度定制 | **极高** | 几乎需要重写 |
+| Function | Frame | Notes |
+|----------|-------|-------|
+| `__arm64_sys_futex` | 0x90 | SUB SP,SP,#0x90 |
+| `do_futex` | 0x70 | SUB SP,SP,#0x70 |
+| `futex_wait_requeue_pi` | 0x1A0 | SUB SP,SP,#0x1A0 |
+| **Total futex chain** | **0x300** | 768B |
+| **waiter offset from stack top** | **0x288** | 648B |
+| `__arm64_sys_pselect6` | 0xA0 | SUB SP,SP,#0xA0 |
+| `core_sys_select` | 0x1C0 | SUB SP,SP,#0x1C0 |
+| `do_select` | 0x3C0 | STP+0x60 + SUB+0x360 |
 
-### 4. 建议的适配流程
+**WARNING**: Previous repo values were wrong (sys_futex=0x70, do_futex=0x130, do_select=0x390). Always use IDA values.
 
-1. **先完成栈覆盖验证**
-   - 实现可控 panic，确认栈覆盖位置
-   - 分析目标内核的系统调用栈布局
-   - 找到用户可控数据能到达 waiter 位置的 syscall
+## Dead Ends (Do Not Repeat)
 
-2. **验证结构体偏移**
-   - 从目标设备提取 vmlinux
-   - 用 pahole 提取所有结构体偏移
-   - 验证 mm_struct 地址泄漏
+| Method | Why it failed |
+|--------|---------------|
+| pselect fd_set on stack | set_fd_set()→bitmap_alloc(), fd_set on heap not stack |
+| configfs type confusion | ashmem strcpy, kernel addr LE first byte is NUL |
+| pselect for mm_struct | leaks kernel stack data, not slab data |
+| Pipe reclaim without mm_struct | all functions depend on KernelSnitch |
+| binder ioctl | EACCES (shell user) |
+| PR_SET_MM_MAP | EPERM (Android blocks) |
+| perf_event_open | SELinux denies |
+| /proc/kallsyms | kptr_restrict enforced |
 
-3. **测试 GhostLock 触发**
-   - 确保 FUTEX_CMP_REQUEUE_PI 能正确触发
-   - 验证悬空 pi_blocked_on 指针
-
-4. **完成提权链**
-   - pipe 物理读写
-   - cred 结构体修补
-   - SELinux 绕过
-
-## Key gotchas
-
-- **`TARGET_CONFIG_H` is mandatory** — `offset.h` errors without it. Pass as a `-D` string literal.
-- **仓库帧大小全部错误** — HANDOFF.md 旧值 (sys_futex=0x70, do_futex=0x130, do_select=0x390) 均不正确。IDA 验证: sys_futex=0x90, do_futex=0x70, do_select=0x3C0。必须使用 IDA output.elf 数据。
-- **KASLR bypass (slide) 阻塞** — Waiter 在 `stack_top - 0x288` (648B), 无 syscall 能在此偏移写入用户可控数据。这是主要阻塞点。
-- **pselect fd_set 在堆上** — set_fd_set()→bitmap_alloc(), 用户数据不在内核栈上。pselect 无法用于 stack reclaim。
-- **Firefox 151 required** — CVE-2026-10702 only exists in version 151.0.
-
-## Architecture notes
+## Architecture
 
 - **No CI, no linter, no tests** — pure research repo
-- **Target-specific offsets** live in `exploit/targets/oppo-find_n2/target.h` (201 lines of #defines, all pahole-verified)
-- **KernelSnitch** uses futex hash collisions + ashmem to leak mm_struct
-- **Analysis scripts** in `analysis-scripts/` — kernel call chain analysis
-- **Test programs** in `test-programs/` — standalone tests for futex, binder, pselect, reclaim, seccomp
+- **Target offsets**: `exploit/targets/oppo-find_n2/target.h` (pahole + IDA verified)
+- **KernelSnitch**: futex hash collisions + ashmem to leak mm_struct
+- **Analysis scripts**: `analysis-scripts/`
+- **Test programs**: `test-programs/`
 
-## Project status
+## Project Status
 
-| Stage | Status |
-|-------|--------|
-| KernelSnitch mm_struct leak | Working |
-| SKB payload preparation | Working |
-| GhostLock FUTEX PI trigger | Fails (ETIMEDOUT, wrong sync) |
-| KASLR bypass (slide) | **Blocked** (no syscall reaches waiter position) |
-| pipe physrw | Pending (depends on KASLR) |
-| root (cred + SELinux) | Pending (depends on KASLR) |
+| Stage | Status | Notes |
+|-------|--------|-------|
+| Firefox CVE-2026-10702 | ✅ Working | |
+| KASLR bypass (slide) | ✅ Working | pselect side-channel leaks nfulnl_logger |
+| GhostLock FUTEX PI trigger | ✅ Working | FUTEX_CMP_REQUEUE_PI ret=1 |
+| KernelSnitch mm_struct leak | ✅ **Working** | bruteforce found mm_struct |
+| sk_buff reclaim | ✅ Working | 4/4 send success |
+| slide pselect crash | ❌ **BLOCKED** | waiter offset 120 bytes — NOT VIABLE |
+| configfs R/W | ❌ **DEAD** | ashmem strcpy behavior |
+| pipe physrw | ⏳ Pending | depends on stack cover fix |
+| root (cred + SELinux) | ⏳ Pending | depends on pipe physrw |
 
-## Reference docs
+## Reference Docs
 
-- `HANDOFF.md` — detailed session handoff with all technical findings
-- `docs/architecture.md` — exploit chain architecture diagram
-- `docs/knowledge-notes.md` — SLUB order calc, rt_mutex_waiter layout, boot image format
-- `TROUBLESHOOTING.md` — build errors, runtime failures, environment issues
+- `HANDOFF.md` — detailed session handoff
+- `docs/architecture.md` — exploit chain diagram
+- `docs/knowledge-notes.md` — SLUB order, rt_mutex_waiter layout
 - NebuSec writeup: https://nebusec.ai/research/ionstack-part-2/
 - CyberMeowfia PoC: https://github.com/NebuSec/CyberMeowfia/blob/main/IonStack/CVE-2026-43499/poc/poc.c

@@ -17,31 +17,21 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 到 7.1 的内核栈 UAF
 
 | 阶段 | 状态 | 说明 |
 |------|------|------|
-| IDA 偏移验证 | ✅ 完成 | output.elf 双重验证 |
-| GhostLock FUTEX PI 触发 | ✅ **验证成功** | FUTEX_CMP_REQUEUE_PI ret=1 |
-| C ashmem 类型验证 | ✅ 完成 | ashmem_area 312 bytes, name[88] 重叠 |
-| configfs_bin_file_operations | ✅ 找到 | bin_buffer at offset +88 |
-| **mm_struct 地址泄漏** | ❌ **阻塞** | Kernel 5.10 FUTEX_WAKE_PRIVATE 不遍历 hash chain |
-| **覆盖 ashmem_misc.fops** | ❌ **阻塞** | 依赖 mm_struct 地址 |
-| 类型混淆 (任意读写) | ⏳ 待实现 | 依赖 fops 覆盖 |
-| 提权 (cred + SELinux) | ⏳ 待实现 | 依赖任意读写 |
-
-### 核心阻塞问题
-
-**KernelSnitch timing 在 kernel 5.10 上完全失效**：
-- `FUTEX_WAKE_PRIVATE val=0` 被优化为不遍历 hash chain（ratio 1.0x，需要 >10x）
-- `FUTEX_CMP_REQUEUE_PI` ratio 1.4x（不够）
-- `FUTEX_TRYLOCK_PI` ratio 1.7x（不够）
-- 所有基于 futex timing 的碰撞检测在 kernel 5.10 上失败
-
-**需要 mm_struct 地址** 来布置 fake kernel page，从而覆盖 `ashmem_misc.fops` 指向 `configfs_bin_file_operations`。没有 mm_struct 地址，类型混淆无法启动。
-
-详见 [问题描述](问题描述.md) 和 [适配分析](docs/adaptation-guide.md)。
+| Firefox CVE-2026-10702 | ✅ 完成 | SpiderMonkey type confusion → fake TypedArray → AAW |
+| KASLR bypass (slide) | ✅ 完成 | pselect side-channel 泄漏 nfulnl_logger |
+| GhostLock FUTEX PI 触发 | ✅ 完成 | FUTEX_CMP_REQUEUE_PI ret=1 |
+| KernelSnitch mm_struct 泄漏 | ✅ 完成 | pile-up ✅, hashsize ✅, bruteforce ✅ |
+| sk_buff reclaim | ✅ 完成 | 4/4 send 成功 |
+| slide pselect (栈覆盖) | ❌ **不可行** | waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置 |
+| pipe physrw | ⏳ 待实现 | 依赖栈覆盖修复 |
+| root (cred + SELinux) | ⏳ 待实现 | 依赖 pipe physrw |
 
 ## 核心特性
 
-- **GhostLock 触发验证** — 通过 `FUTEX_CMP_REQUEUE_PI` 成功触发 GhostLock 漏洞，requeue ret=1
-- **C ashmem 类型混淆** — 验证 OPPO Find N2 使用 C ashmem，`name[88]` 与 `configfs_buffer.bin_buffer` 重叠
+- **KernelSnitch mm_struct 泄漏** — 通过 futex hash 碰撞 + 时间差测量，成功从内核 direct-map 中定位 mm_struct 地址
+- **KASLR bypass** — 利用 pselect side-channel 泄漏 nfulnl_logger 地址，推导 kernel base
+- **GhostLock FUTEX PI 触发** — 通过 FUTEX_CMP_REQUEUE_PI 成功触发 rtmutex PI chain walk
+- **sk_buff reclaim** — 成功将控制数据写入内核页
 - **IDA 偏移验证** — 通过 IDA output.elf 验证所有关键内核符号地址和结构体偏移
 - **帧大小修正** — 修正仓库中错误的帧大小数据 (sys_futex=0x90, do_futex=0x70, do_select=0x3C0)
 - **自动化构建** — Makefile 自动检测 NDK 路径，一键编译 preload.so
@@ -69,44 +59,30 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 到 7.1 的内核栈 UAF
 | IDA Pro | 7.0+ | 二进制分析 (可选) |
 | 目标设备 | OPPO Find N2 | exploit 目标 |
 
-### 安装依赖
-
-```bash
-# macOS
-brew install --cask android-ndk
-brew install android-platform-tools
-
-# 验证安装
-$NDK_PATH/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang --version
-adb version
-```
+> [!WARNING]
+> 必须使用 NDK r29 的 `aarch64-linux-android35-clang`。使用其他版本可能导致 shadow stack OOM。
 
 ### 编译 exploit
 
 ```bash
 cd exploit/
-
-# 使用 Makefile (推荐)
-make                    # 自动检测 NDK
-make NDK=/path/to/ndk  # 指定 NDK 路径
+make NDK=/tmp/ndk_extract/android-ndk-r29   # 指定 NDK 路径
 ```
 
 ### 部署到设备
 
 ```bash
 adb push preload.so /data/local/tmp/
-adb shell "chmod 755 /data/local/tmp/preload.so"
-adb shell "LD_PRELOAD=/data/local/tmp/preload.so /system/bin/id"
+adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 ```
 
 ### 验证成功
 
-成功后会显示:
-
-```
-[+] preload starting pid=...
-[+] startup context pid=... uid=0(root)
-```
+成功标志：
+- `[+] preload starting pid=...`
+- `[*] parameters cpu (16) mm_struct sz (3c0) mm slab order (3) thread cnt (8) collisions (16)`
+- `[*] pile-up verified: approx_time=...`
+- `[*] prepare_kernel_page leaked_mm=...`
 
 ## 仓库目录结构
 
@@ -119,7 +95,7 @@ oppo-ghostlock/
 ├── FAQ.md                             # 常见问题
 ├── CONTRIBUTING.md                    # 贡献指南
 ├── CHANGELOG.md                       # 版本更新日志
-├── 问题描述.md                        # 完整问题描述 (发给大佬求助)
+├── 问题描述.md                         # 完整问题描述
 ├── exploit/                           # exploit 源代码与构建
 │   ├── Makefile                       # 构建脚本
 │   ├── src/                           # 源代码
@@ -134,6 +110,10 @@ oppo-ghostlock/
 │   │   ├── wallpaper_blob.S           # wallpaper 嵌入
 │   │   ├── common.h                   # 公共定义与偏移
 │   │   └── kernelsnitch/              # KernelSnitch 库
+│   │       ├── kernelsnitch.h         # 核心逻辑
+│   │       ├── futex_hash.h           # Jenkins jhash2
+│   │       ├── timeutils.h            # ARM cntvct_el0 计时
+│   │       └── utils.h                # 工具函数
 │   ├── targets/oppo-find_n2/          # 设备特定配置
 │   │   └── target.h                   # 内核偏移量 (IDA 验证)
 │   └── test-programs/                 # 测试程序
@@ -144,8 +124,6 @@ oppo-ghostlock/
 │   ├── best-practice.md               # 最佳实践
 │   ├── knowledge-notes.md             # 技术知识沉淀
 │   └── adaptation-guide.md            # 适配指南
-├── test-programs/                     # 测试程序
-├── extract-vmlinux                    # vmlinux 提取工具
 └── kernel.elf                         # 分析用内核二进制
 ```
 
@@ -153,7 +131,6 @@ oppo-ghostlock/
 
 | 文档 | 说明 |
 |------|------|
-| [问题描述](问题描述.md) | 完整问题描述 (发给大佬求助) |
 | [AGENTS.md](AGENTS.md) | AI Agent 指南 |
 | [HANDOFF.md](HANDOFF.md) | 会话交接文档 |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 问题排查手册 |
@@ -183,11 +160,12 @@ oppo-ghostlock/
 - [IonStack Part I](https://nebusec.ai/research/ionstack-part-1/) — Firefox 漏洞分析
 - [CyberMeowfia PoC](https://github.com/NebuSec/CyberMeowfia/blob/main/IonStack/CVE-2026-43499/poc/poc.c) — PoC 代码
 - [vmlinux-to-elf](https://github.com/marin-m/vmlinux-to-elf) — 内核符号提取工具
+- [Dere3046 Expert Analysis](https://github.com/NebuSec/CyberMeowfia/pull/22) — K80U PR #22 适配建议
+
+## 开源协议
+
+本项目采用 [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0) 开源协议。
 
 ## 免责声明
 
 本项目仅供安全研究和教育目的。未经授权对他人设备进行测试是违法的。
-
-## License
-
-GPL License

@@ -1,21 +1,23 @@
 # Syscall Stack Reachability Analysis for GhostLock Waiter Position
 
 **Date**: 2026-07-14
-**Goal**: Find a syscall that writes user-controlled data to the `rt_mutex_waiter` position on the kernel stack (stack_top - 0x288)
+**Goal**: Find a syscall that writes user-controlled data to the `rt_mutex_waiter` position on the kernel stack (stack_top - 0x270)
 **Status**: ❌ No viable stack spray candidate found — sendmmsg gap is 112 bytes (not 8)
 
 ---
 
-## Waiter Position Summary
+## Waiter Position Summary (IDA VERIFIED 2026-07-14)
 
 ```
 waiter struct (rt_mutex_waiter, 80 bytes):
-  tree_entry:      stack_top - 0x300  (+0x00)
-  pi_tree_entry:   stack_top - 0x2E8  (+0x18)
-  task:            stack_top - 0x2D0  (+0x30)  ← critical
-  lock:            stack_top - 0x2C8  (+0x38)  ← critical
-  prio:            stack_top - 0x2C0  (+0x40)
-  deadline:        stack_top - 0x2B8  (+0x48)
+  tree_entry:      stack_top - 0x270  (+0x00)  ← waiter 起始位置
+  pi_tree_entry:   stack_top - 0x258  (+0x18)
+  task:            stack_top - 0x240  (+0x30)  ← critical
+  lock:            stack_top - 0x238  (+0x38)  ← critical
+  prio:            stack_top - 0x230  (+0x40)
+  deadline:        stack_top - 0x228  (+0x48)
+
+注意: 之前 AGENTS.md 记录 waiter 在 stack_top - 0x288，经 IDA 重新验证为 0x270
 ```
 
 Target: write user-controlled data to at least `lock` (+0x38) through `deadline` (+0x48).
@@ -34,8 +36,8 @@ Target: write user-controlled data to at least `lock` (+0x38) through `deadline`
 | **Total** | **0x620** | |
 
 **fd_set data**: `core_sys_select SP + 0x50 = stack_top - 0x210`
-**Waiter**: `stack_top - 0x288`
-**Gap**: 0x78 (120 bytes) — fd_set is ABOVE waiter, cannot reach downward.
+**Waiter**: `stack_top - 0x270` (IDA VERIFIED)
+**Gap**: 0x60 (96 bytes) — fd_set is ABOVE waiter, cannot reach downward.
 
 **NFDS sweep results**: All NFDS values (320/321/344/640) fail.
 - NFDS ≤ 320: fd_set on栈, but 120 bytes above waiter
@@ -57,12 +59,12 @@ Target: write user-controlled data to at least `lock` (+0x38) through `deadline`
 
 | Data | Location | User-controlled? |
 |------|----------|-----------------|
-| msghdr (56B) via `__copy_msghdr_from_user` | stack_top - 0x270 | ✅ Yes, but only reaches 0x270, waiter at 0x288 |
+| msghdr (56B) via `__copy_msghdr_from_user` | stack_top - 0x270 | ✅ Yes, but only reaches 0x270, waiter at 0x270 |
 | cmsg via `____sys_sendmsg` (small ≤36B) | stack_top - 0x1E0 (v41) | ✅ Yes, but too high |
 | cmsg via `____sys_sendmsg` (large >36B) | heap (kmalloc) | ❌ Not on stack |
 | selinux security decision via `avc_has_perm` | stack_top - 0x280 (v7) | ❌ Kernel-controlled constants |
 
-**Critical finding**: `selinux_socket_sendmsg` frame reaches waiter position (0x2F0 > 0x288), and `v8` at stack_top - 0x288 EXACTLY overlaps waiter's `lock` field. But `v8 = &v11` (a stack pointer), NOT user-controlled data.
+**Critical finding**: `selinux_socket_sendmsg` frame reaches waiter position (0x2F0 > 0x270), and `v8` at stack_top - 0x270 EXACTLY overlaps waiter's `tree_entry` field. But `v8 = &v11` (a stack pointer), NOT user-controlled data.
 
 **Verdict**: ❌ DEAD — frame deep enough, but no user-controlled data at waiter position.
 

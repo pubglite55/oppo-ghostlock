@@ -144,10 +144,13 @@ ex3=0000000000000000
 
 即使 kernel base 正确（PR #13 跳过了 slide leak），**pselect 栈覆盖本身仍然不可行**：
 
-1. waiter 在 stack_top - 0x288
+1. waiter 在 stack_top - 0x270 (IDA VERIFIED 2026-07-14)
 2. fd_set 数据在 stack_top - 0x210
-3. 偏移差 120 字节 (0x78)
+3. 偏移差 96 字节 (0x60)
 4. fd_set bitmaps 从 stack_top - 0x210 向上增长，无法覆盖 waiter 位置
+
+> [!NOTE]
+> 之前记录为 stack_top - 0x288 (120 bytes)，经 IDA 重新验证为 0x270 (96 bytes)
 
 ### FRONTEND_STACK_ALLOC=256 确认
 

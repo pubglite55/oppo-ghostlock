@@ -75,7 +75,7 @@ for order in range(5):
 | __arm64_sys_futex | 0x90 (144B) | IDA SUB SP,SP,#0x90 |
 | do_futex | 0x70 (112B) | IDA SUB SP,SP,#0x70 |
 | futex_wait_requeue_pi | 0x1a0 (416B) | IDA SUB SP,SP,#0x1a0 |
-| waiter 位置 | stack_top - 0x288 | IDA 计算 (0x300 - 0x78) |
+| waiter 位置 | stack_top - 0x270 | IDA VERIFIED 2026-07-14 (0x300 - 0x90) |
 
 ## 注意事项
 

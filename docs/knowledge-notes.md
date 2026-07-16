@@ -113,17 +113,19 @@ P0_DATA_ALIAS_CONST(addr) = P0_PAGE_OFFSET | ((addr) - KIMAGE_TEXT_BASE + P0_KER
 | `do_futex` | `0x70` | `SUB SP,SP,#0x70` |
 | `futex_wait_requeue_pi` | `0x1A0` | `SUB SP,SP,#0x1A0` |
 | **futex chain 总计** | **0x300** | 768B |
-| **waiter 距栈顶** | **0x288** | 648B |
+| **waiter 距栈顶** | **0x270** | 624B (IDA VERIFIED 2026-07-14) |
 | `__arm64_sys_pselect6` | `0xA0` | `SUB SP,SP,#0xA0` |
 | `core_sys_select` | `0x1C0` | `SUB SP,SP,#0x1C0` |
 | `do_select` | `0x3C0` | `STP+0x60 + SUB+0x360` |
 
-### fd_set 与 waiter 偏移差
+### fd_set 与 waiter 偏移差 (IDA VERIFIED 2026-07-14)
 
 ```
 fd_set 数据: stack_top - 0x210 (core_sys_select SP+0x50)
-waiter: stack_top - 0x288 (do_select 帧内)
-偏移差: 0x78 (120 bytes)
+waiter: stack_top - 0x270 (futex_wait_requeue_pi SP+0x90)
+偏移差: 0x60 (96 bytes)
+
+注意: 之前 AGENTS.md 记录为 stack_top - 0x288 (120 bytes)，经 IDA 重新验证为 0x270 (96 bytes)
 ```
 
 > [!WARNING]

@@ -1,3 +1,5 @@
+# FAQ.md
+
 # 常见问题
 
 ## 使用类
@@ -6,97 +8,81 @@
 
 ```bash
 cd exploit/
-make NDK=/tmp/ndk_extract/android-ndk-r29
+make clean && make NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
 ```
-
-输出: `preload.so` (128KB)
 
 ### Q: 如何部署到设备？
 
 ```bash
-adb push preload.so /data/local/tmp/
+adb push out/aarch64/libexploit.so /data/local/tmp/preload.so
+adb shell chmod 755 /data/local/tmp/preload.so
+```
+
+### Q: 如何运行 exploit？
+
+```bash
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 ```
 
-### Q: 成功标志是什么？
+### Q: 编译时为什么必须 `make clean && make`？
 
-```
-[+] preload starting pid=...
-[*] parameters cpu (16) mm_struct sz (3c0) mm slab order (3) thread cnt (8) collisions (16)
-[*] pile-up verified: approx_time=...
-[*] prepare_kernel_page leaked_mm=...
-```
+Makefile 不追踪 .h 文件变化，修改 .h 后必须 clean 再 make。
 
-### Q: 为什么设备没有 root 权限？
+### Q: 为什么不能使用 android35 API？
 
-OPPO Find N2 是用户版本，没有 root 权限。不能用 strace、kallsyms、dmesg 等 root-only 工具。
-
-### Q: 如何获取 kernel 日志？
-
-> [!NOTE]
-> 设备 kernel 日志完全不可访问:
-> - `dmesg` → SELinux deny syslog_read
-> - `/sys/fs/pstore/` → 空目录
-> - logcat 无 kernel panic 日志
-
----
+android35 会导致 shadow stack OOM。NDK r29 的 android35 对 shadow stack 支持不完整。
 
 ## 开发类
 
-### Q: 为什么不能用仓库默认的帧大小？
+### Q: 如何验证内核偏移？
 
-仓库中的帧大小全部错误:
-- sys_futex: 0x70 (旧) → 0x90 (IDA 验证)
-- do_futex: 0x130 (旧) → 0x70 (IDA 验证)
-- do_select: 0x390 (旧) → 0x3C0 (IDA 验证)
+使用 IDA Pro 打开 `boot_unpacked/output.elf`，通过 MCP 端口 13337 连接。所有偏移必须 IDA + pahole 双重验证。
 
-**必须使用 IDA output.elf 验证的值。**
+### Q: 为什么 pselect fd_set 栈覆盖不可行？
 
-### Q: 为什么 IDENTITY 范围是 0xffffff80-0xffffffc0？
+两个原因：
+1. NFDS > 336: fd_set 通过 `bitmap_alloc()` 分配在堆上
+2. NFDS ≤ 336: fd_set 在栈上，但 waiter 在 fd_set 下方 120 字节，无法覆盖
 
-mm_struct 由 slab 分配器在 direct-map 范围中分配。ARM64 39-bit VA 的 direct-map 范围是 `0xffffff8000000000-0xffffffc000000000` (16GB)。
+### Q: 为什么 configfs R/W 不可行？
 
-旧值 `0xffffffc0-0xffffffc4` 是 kernel image 范围，不包含 slab 分配。
+OPPO 内核的 ashmem 驱动没有 configfs 支持。`CONFIG_ASHMEM_CONFIGFS` 未启用，pread 返回 EOF。
 
-### Q: 为什么 KSNITCH_COLLISIONS 要设为 16？
+### Q: 为什么 CVE-2026-23274 不可行？
 
-更多碰撞数 = 更严格匹配 = 更少假阳性。设为 4 时只找到 3 碰撞，bruteforce 选择性不足。设为 16 后找到 15 碰撞，bruteforce 成功。
+漏洞触发链每一步都需要 CAP_NET_RAW，而设备无 root + CONFIG_USER_NS=n，无法获取 capabilities。
 
-### Q: 为什么 pile-up 需要验证？
+### Q: KernelSnitch 的 MM_STRUCT_SZ 为什么是 0x3c0？
 
-原始代码只 yield 2 次，线程可能还没全部 block 就开始测量。添加 pile-up verification 后，ratio 从 1.0x 提升到 ~120x。
-
-### Q: 为什么 hashsize 要用 roundup_pow2？
-
-内核使用 `roundup_pow_of_two(nr_cpu_ids * 256)` 计算 hashsize。用户态必须匹配内核行为，否则 hash bucket 不一致。
-
-### Q: slide pselect 为什么不可行？
-
-waiter 在 stack_top-0x288，fd_set 数据在 stack_top-0x210，偏移差 120 字节。fd_set bitmaps 从 stack_top-0x210 向上增长，无法覆盖 waiter 位置。没有 NFDS 值能解决这个问题。
-
----
+通过 pahole 验证 OPPO Find N2 的 mm_struct 实际大小为 960 bytes (0x3c0)，与仓库默认值 0x500 不同。
 
 ## 部署类
 
-### Q: NDK 版本有什么要求？
+### Q: 设备无法连接 adb 怎么办？
 
-必须使用 NDK r29 的 `aarch64-linux-android35-clang`。使用其他版本可能导致 shadow stack OOM。
+1. 检查 USB 调试是否启用
+2. 检查 USB 线是否正常
+3. 尝试重启 adb server: `adb kill-server && adb start-server`
 
-### Q: 设备需要什么条件？
+### Q: 设备没有 root 能运行 exploit 吗？
 
-- OPPO Find N2 (SM8475/CPH2413)
-- Kernel 5.10.236
-- CONFIG_FUTEX_PI=y
-- USB 调试模式
+可以。本项目所有 exploit 都设计为在无 root 环境下工作。
 
-### Q: exploit 失败会怎样？
-
-exploit 失败可能导致设备重启 (kernel panic)。这是正常现象，重启后可重新测试。
-
-### Q: 如何回滚到之前的版本？
+### Q: 如何获取设备内核版本？
 
 ```bash
-git log --oneline  # 查看 commit 历史
-git checkout <commit-hash> -- exploit/
-make clean && make NDK=/tmp/ndk_extract/android-ndk-r29
+adb shell uname -r
+# 输出: 5.10.236-android12-9-o-g74d132f4467a
 ```
+
+### Q: 如何获取设备安全配置？
+
+```bash
+adb shell zcat /proc/config.gz | grep CONFIG_FUTEX_PI
+```
+
+### Q: exploit 运行后没有输出怎么办？
+
+1. 检查 preload.so 是否正确推送
+2. 检查 LD_PRELOAD 路径是否正确
+3. 检查 SELinux 是否阻止了加载

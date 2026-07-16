@@ -1,125 +1,137 @@
+# docs/setup.md
+
 # 环境搭建与部署文档
 
 ## 依赖清单
 
-### 软件依赖
-
-| 组件 | 版本 | 用途 | 安装方式 |
-|------|------|------|----------|
-| Android NDK | r29 | 交叉编译 exploit | 下载解压到 `/tmp/ndk_extract/android-ndk-r29` |
-| ADB | 37.0+ | Android 设备交互 | `brew install android-platform-tools` |
-| Python | 3.8+ | 服务器脚本 | 系统自带或 brew install |
-| IDA Pro | 7.0+ | 二进制分析 (可选) | 商业软件 |
-| Make | - | 构建系统 | 系统自带 |
-
-### 硬件依赖
-
-| 组件 | 要求 |
-|------|------|
-| 目标设备 | OPPO Find N2 (SM8475/CPH2413) |
-| USB 连接 | ADB 调试模式 |
-| 内核版本 | 5.10.236 (CONFIG_FUTEX_PI=y) |
+| 依赖名称 | 版本要求 | 安装方式 | 是否必填 | 备注 |
+|----------|----------|----------|----------|------|
+| Android NDK | r29 | 下载解压 | ✅ 是 | 必须使用 android35 |
+| macOS / Linux | — | — | ✅ 是 | 开发主机 |
+| adb | — | Android SDK Platform Tools | ✅ 是 | 设备调试 |
+| IDA Pro | — | 商业软件 | ⚠️ 可选 | 内核偏移验证 |
+| pahole | — | `brew install pahole` | ⚠️ 可选 | 结构体偏移验证 |
+| Firefox | 151 | Mozilla 官网 | ⚠️ 可选 | Stage 1 exploit |
+| OPPO Find N2 | kernel 5.10.236 | — | ✅ 是 | 目标设备 |
 
 ## 本地开发环境搭建
 
-### 1. 安装 Android NDK
+### macOS 环境
 
 ```bash
-# 下载 NDK r29
-# 解压到指定路径
-mkdir -p /tmp/ndk_extract
-cd /tmp/ndk_extract
-# 下载并解压 android-ndk-r29-darwin.dmg 或 zip
+# 1. 安装 Android NDK r29
+brew install --cask android-ndk
 
-# 验证安装
-/tmp/ndk_extract/android-ndk-r29/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang --version
+# 2. 验证 NDK 路径
+ls /usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang
+
+# 3. 设置环境变量
+export NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
+
+# 4. 验证编译器
+$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang --version
 ```
 
-> [!WARNING]
-> 必须使用 NDK r29 的 `aarch64-linux-android35-clang`。使用 android35 以外的版本可能导致 shadow stack OOM。
-
-### 2. 安装 ADB
+### Linux 环境
 
 ```bash
-# macOS
-brew install android-platform-tools
+# 1. 下载 Android NDK r29
+wget https://dl.google.com/android/repository/android-ndk-r29-linux.zip
+unzip android-ndk-r29-linux.zip -d /opt/
 
-# 验证安装
-adb version
+# 2. 设置环境变量
+export NDK=/opt/android-ndk-r29
+
+# 3. 验证编译器
+$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang --version
 ```
 
-### 3. 连接设备
+### 设备连接
 
 ```bash
-# 启用 USB 调试
-# 设置 → 开发者选项 → USB 调试 → 开启
+# 1. 启用 USB 调试
+# 设置 → 关于手机 → 连续点击版本号 7 次 → 开发者选项 → USB 调试
 
-# 验证连接
+# 2. 连接设备
 adb devices
 # 应显示: 84cb96e2    device
+
+# 3. 验证设备信息
+adb shell getprop ro.build.display.id
+# 应显示: UP1A.231005.007
 ```
 
-### 4. 编译 exploit
+## 编译与部署
+
+### 编译 exploit
 
 ```bash
+# 进入 exploit 目录
 cd exploit/
-make NDK=/tmp/ndk_extract/android-ndk-r29
 
-# 验证编译成功
-ls -la preload.so
-# 应显示: -rwxr-xr-x  ... preload.so
+# 清理旧文件
+make clean
+
+# 编译 (macOS)
+make NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
+
+# 编译 (Linux)
+make NDK=/opt/android-ndk-r29
+
+# 验证输出
+ls -la out/aarch64/libexploit.so
+# 应显示约 128KB 的共享库
 ```
 
-### 5. 部署到设备
+### 部署到设备
 
 ```bash
-adb push preload.so /data/local/tmp/
-adb shell 'chmod 755 /data/local/tmp/preload.so'
+# 推送到设备
+adb push out/aarch64/libexploit.so /data/local/tmp/preload.so
+
+# 设置权限
+adb shell chmod 755 /data/local/tmp/preload.so
+
+# 验证文件
+adb shell ls -la /data/local/tmp/preload.so
 ```
 
-### 6. 运行测试
+### 运行测试
 
 ```bash
+# 基础测试
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
+
+# 预期输出: "preload starting pid=..."
 ```
 
 ## 配置项全解
 
-### target.h 配置
+### 编译配置
 
-| 配置名 | 值 | 说明 |
+| 配置项名 | 环境变量 | 默认值 | 可选值 | 作用说明 | 是否必填 |
+|----------|----------|--------|--------|----------|----------|
+| NDK 路径 | `NDK` | — | NDK 安装路径 | Android NDK 根目录 | ✅ 是 |
+| API Level | `API` | 35 | 21-35 | Android API 版本 | ⚠️ 可选 |
+| 目标设备 | `PROJECT` | — | `oppo-find_n2` | 目标设备配置 | ✅ 是 |
+
+### target.h 关键配置
+
+| 常量名 | 值 | 说明 |
 |--------|-----|------|
-| `KERNELSNITCH_IDENTITY_START` | `0xffffff8000000000ULL` | direct-map 起始地址 |
-| `KERNELSNITCH_IDENTITY_END` | `0xffffffc000000000ULL` | direct-map 结束地址 (16GB) |
-| `PSELECT_WAITER_WORD_SHIFT` | 0 | waiter word 偏移 |
-| `P0_PAGE_OFFSET` | `0xffffff8000000000ULL` | 39-bit VA direct map 基址 |
-| `P0_KERNEL_PHYS_LOAD` | `0xa8000000ULL` | XBL firmware verified |
-
-### common.h 配置
-
-| 配置名 | 值 | 说明 |
-|--------|-----|------|
-| `MM_STRUCT_SZ` | `0x3c0` | mm_struct 大小 (pahole 验证) |
-| `MM_ORDER` | 3 | SLUB order (32KB slab) |
-| `KSNITCH_COLLISIONS` | 16 | 碰撞搜索目标数 |
-| `PSELECT_ROUTE_NFDS` | 320 | pselect NFDS 值 |
+| `KIMAGE_TEXT_BASE` | `0xffffffc008000000` | 内核文本段基地址 |
+| `P0_PAGE_OFFSET` | `0xffffff8000000000` | 直接映射区起始 |
+| `P0_KERNEL_PHYS_LOAD` | `0xa8000000` | XBL 固件硬编码物理加载地址 |
+| `MM_STRUCT_SZ` | `0x3c0` | mm_struct 大小 |
+| `MM_ORDER` | `3` | slab order (32KB) |
 
 ## 升级与回滚
 
-### 升级步骤
+> [!NOTE] 待补充：对话中未提及相关信息
 
-1. 修改源代码
-2. `make clean && make NDK=/tmp/ndk_extract/android-ndk-r29`
-3. `adb push preload.so /data/local/tmp/`
-4. 测试验证
+## 注意事项
 
-### 回滚方案
-
-```bash
-# 回滚到特定 commit
-git log --oneline  # 查看 commit 历史
-git checkout <commit-hash> -- exploit/
-
-# 重新编译
-make clean && make NDK=/tmp/ndk_extract/android-ndk-r29
-```
+> [!WARNING]
+> - 编译必须使用 `make clean && make`，Makefile 不追踪 .h 文件变化
+> - NDK 必须是 r29 版本，android35 会导致 shadow stack OOM
+> - 设备无 root，无法使用 strace、kallsyms、dmesg

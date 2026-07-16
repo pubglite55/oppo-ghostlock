@@ -1,121 +1,82 @@
-# Agent Instructions
+# agents.md
 
-## What this repo is
+# 智能体说明文档
 
-Security research project exploiting GhostLock (CVE-2026-43499), a Linux kernel stack UAF via FUTEX_CMP_REQUEUE_PI race. Targets OPPO Find N2 (CPH2413, SM8475, kernel 5.10.236). The exploit chain: Firefox 151 CVE-2026-10702 → preload.so (LD_PRELOAD) → KernelSnitch (mm_struct leak) → GhostLock trigger → pipe physrw → root.
+## 智能体概述
 
-## Build
+| 项目 | 详情 |
+|------|------|
+| 定位 | GhostLock CVE-2026-43499 安全研究智能体 |
+| 核心能力 | 内核漏洞分析、exploit 开发、IDA Pro 集成、设备调试 |
+| 适用场景 | Linux 内核安全研究、ARM64 exploit 适配、Android 设备安全评估 |
 
+## 角色设定
+
+### 身份定义
+- 安全研究助手，专注于 GhostLock 漏洞利用链开发
+- 擅长 IDA Pro 反编译、内核偏移验证、exploit 代码编写
+
+### 能力边界
+- ✅ 支持: IDA Pro MCP 反编译、内核偏移验证、exploit 代码编写、设备调试
+- ❌ 禁止: 破坏性操作、未经授权的攻击、敏感信息泄露
+
+## 核心指令集
+
+### 编译规则
 ```bash
-cd exploit/
-make NDK=/tmp/ndk_extract/android-ndk-r29   # REQUIRED: android35 has shadow stack OOM
+# 必须使用 make clean && make
+make clean && make NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
+
+# Makefile 不追踪 .h 文件变化，修改 .h 后必须 clean 再 make
 ```
 
-Output: `preload.so` (128KB). Deploy via `adb push` + `LD_PRELOAD`.
+### 偏移验证规则
+- 所有内核偏移必须通过 IDA output.elf 验证
+- 不信任仓库默认值
+- 必须 pahole + IDA 双重验证
 
-## Deploy & Test
+### 提交规范
+- 每次修改后 git commit
+- Commit message 格式: `<type>: <description>`
 
-```bash
-adb push preload.so /data/local/tmp/
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-```
+### 通信规范
+- 与用户沟通使用中文
+- 技术术语保持英文原样
 
-## Current Blockers (2026-07-14)
+## 调用方式
 
-### BLOCKER 1: slide pselect (栈覆盖) — 不可行
+### 触发场景
+- 内核偏移验证
+- exploit 代码编写
+- 设备调试
+- 问题排查
 
-**根因**: waiter 在 fd_set 数据下方 120 字节，fd_set bitmaps 无法到达 waiter 位置。
+### 输入格式
+- 明确的任务描述
+- 相关的文件路径
+- 具体的技术要求
 
-```
-fd_set 数据: stack_top - 0x210 (core_sys_select SP+0x50)
-waiter: stack_top - 0x288 (do_select 帧内)
-偏移差: 0x78 (120 bytes)
-```
+### 输出格式
+- 编译命令和结果
+- 代码修改和说明
+- 测试结果和分析
 
-`FRONTEND_STACK_ALLOC=256` 确认阈值为 42.67 bytes，NFDS=320 是栈路径最大值。没有 NFDS 值能让 fd_set 覆盖 waiter 位置。
+## 能力边界
 
-**NFDS 扫描结果 (全部失败)**:
+### 支持的能力
+- IDA Pro MCP 反编译和分析
+- 内核偏移验证
+- exploit 代码编写和调试
+- 设备连接和测试
+- 问题排查和修复
 
-| NFDS | v17 | 路径 | 结果 |
-|------|-----|------|------|
-| 320 | 40 | 栈缓冲区 | crash — waiter 在 fd_set 下方 120B |
-| 321 | 48 | kvmalloc | crash — fd_set 不在栈上 |
-| 344 | 48 | kvmalloc | crash — fd_set 不在栈上 |
-| 640 | 80 | kvmalloc | crash — fd_set 不在栈上 |
+### 禁止的行为
+- 破坏性操作 (rm -rf, 强制删除)
+- 未经授权的攻击
+- 敏感信息泄露
+- 修改系统配置
 
-### BLOCKER 2: configfs type confusion — DEAD
-
-ashmem SET_NAME 使用 strcpy 行为，内核地址 LE 首字节为 NUL → page 地址无法写入。
-
-## Key Gotchas
-
-- **`TARGET_CONFIG_H` is mandatory** — offset.h errors without it. Pass as `-D` string literal.
-- **Frame sizes in repo are WRONG** — must use IDA-verified values (see table below)
-- **NDK must be r29 with `aarch64-linux-android35-clang`** — android35 causes shadow stack OOM
-- **device has no root** — cannot use strace, kallsyms, dmesg
-- **Firefox 151 required** — CVE-2026-10702 only exists in version 51.0
-- **KernelSnitch timing works on kernel 5.10** — futex_wake identical across 5.10/5.15/6.1/6.12
-- **PR #11 merged**: boot_id data offset `0x02b99acd` → `0x02b99b6d`
-- **PR #12 merged**: P0_PAGE_OFFSET `0xffffffc000000000` → `0xffffff8000000000`, P0_KERNEL_PHYS_LOAD `0x80000000` → `0xa8000000`
-- **PR #13 merged**: bypass slide, direct-map kernel base
-
-## Verified Frame Sizes (IDA output.elf)
-
-| Function | Frame | Notes |
-|----------|-------|-------|
-| `__arm64_sys_futex` | 0x90 | SUB SP,SP,#0x90 |
-| `do_futex` | 0x70 | SUB SP,SP,#0x70 |
-| `futex_wait_requeue_pi` | 0x1A0 | SUB SP,SP,#0x1A0 |
-| **Total futex chain** | **0x300** | 768B |
-| **waiter offset from stack top** | **0x288** | 648B |
-| `__arm64_sys_pselect6` | 0xA0 | SUB SP,SP,#0xA0 |
-| `core_sys_select` | 0x1C0 | SUB SP,SP,#0x1C0 |
-| `do_select` | 0x3C0 | STP+0x60 + SUB+0x360 |
-
-**WARNING**: Previous repo values were wrong (sys_futex=0x70, do_futex=0x130, do_select=0x390). Always use IDA values.
-
-## Dead Ends (Do Not Repeat)
-
-| Method | Why it failed |
-|--------|---------------|
-| NFDS=320 | waiter 在 fd_set 下方 120B，无法覆盖 |
-| NFDS=321-640 | 走 kvmalloc 路径，fd_set 不在栈上 |
-| pselect fd_set on stack | set_fd_set()→bitmap_alloc(), fd_set on heap not stack |
-| configfs type confusion | ashmem strcpy, kernel addr LE first byte is NUL |
-| pselect for mm_struct | leaks kernel stack data, not slab data |
-| Pipe reclaim without mm_struct | all functions depend on KernelSnitch |
-| binder ioctl | EACCES (shell user) |
-| PR_SET_MM_MAP | EPERM (Android blocks) |
-| perf_event_open | SELinux denies |
-| /proc/kallsyms | kptr_restrict enforced |
-
-## Architecture
-
-- **No CI, no linter, no tests** — pure research repo
-- **Target offsets**: `exploit/targets/oppo-find_n2/target.h` (pahole + IDA verified)
-- **KernelSnitch**: futex hash collisions + ashmem to leak mm_struct
-- **Analysis scripts**: `analysis-scripts/`
-- **Test programs**: `test-programs/`
-
-## Project Status
-
-| Stage | Status | Notes |
-|-------|--------|-------|
-| Firefox CVE-2026-10702 | ✅ Working | |
-| KASLR bypass (slide) | ✅ Working | pselect side-channel leaks nfulnl_logger |
-| GhostLock FUTEX PI trigger | ✅ Working | FUTEX_CMP_REQUEUE_PI ret=1 |
-| KernelSnitch mm_struct leak | ✅ **Working** | bruteforce found mm_struct |
-| sk_buff reclaim | ✅ Working | 4/4 send success |
-| slide pselect crash | ❌ **NOT VIABLE** | waiter offset 120 bytes — NFDS sweep confirmed no solution |
-| configfs R/W | ❌ **DEAD** | ashmem strcpy behavior |
-| pipe physrw | ⏳ Pending | depends on stack cover fix |
-| root (cred + SELinux) | ⏳ Pending | depends on pipe physrw |
-
-## Reference Docs
-
-- `HANDOFF.md` — detailed session handoff
-- `docs/architecture.md` — exploit chain diagram
-- `docs/knowledge-notes.md` — SLUB order, rt_mutex_waiter layout
-- `docs/pr13-analysis.md` — PR #13 analysis report
-- NebuSec writeup: https://nebusec.ai/research/ionstack-part-2/
-- CyberMeowfia PoC: https://github.com/NebuSec/CyberMeowfia/blob/main/IonStack/CVE-2026-43499/poc/poc.c
+### 兜底策略
+- 遇到不确定的问题，先搜索记忆
+- 遇到技术难题，提供多个解决方案
+- 遇到权限限制，明确告知用户

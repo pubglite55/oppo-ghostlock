@@ -1,202 +1,317 @@
+# TROUBLESHOOTING.md
+
 # 问题排查手册
 
 ## 文档说明
 
-本文档收录了开发过程中遇到的所有问题及其解决方案。按类型分类，每条问题包含触发场景、报错信息、排查思路和解决方案。
+本文档收录 OPPO Find N2 GhostLock exploit 开发过程中遇到的所有问题及其解决方案。问题按类型分类，每条问题包含触发场景、报错信息、排查思路和解决方案。
 
----
+## 问题分类归档
 
-## 编译/构建报错类
+### 构建编译类
 
-### 1. `offset.h` 编译错误: 未定义的偏移量
+#### 1. 编译找不到 NDK
 
-**触发场景**: 编译 exploit 时缺少 `TARGET_CONFIG_H` 宏定义
+**问题标题**: NDK 路径未找到
 
-**完整报错信息**:
-```
-error: use of undeclared identifier 'ASHMEM_MISC_FOPS_OFF'
-```
-
-**解决方案**:
-
-Makefile 中自动定义 `TARGET_CONFIG_H`:
-```makefile
-CFLAGS = ... -DTARGET_CONFIG_H='"$(TARGET_DIR)/target.h"'
-```
-
----
-
-### 2. `__measure` 隐式声明错误
-
-**触发场景**: 在 `kernelsnitch.h` 中调用 `__measure()` 但函数定义在调用之后
+**触发场景**: 执行 `make NDK=...` 时
 
 **完整报错信息**:
 ```
-error: implicit declaration of function '__measure'
-note: previous implicit declaration is here
+/Users/xiuxiu391/Desktop/oppo/oppo-ghostlock/exploit/Makefile:34: *** "NDK not found". Stop.
 ```
+
+**复现步骤**:
+1. 未设置 NDK 环境变量
+2. 执行 `make`
+
+**排查思路**:
+1. 检查 NDK 是否已安装
+2. 检查路径是否正确
+3. macOS 路径与 Linux 不同
 
 **解决方案**:
+- 临时规避: `export NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK`
+- 最终修复: 在 Makefile 中指定正确路径
 
-在文件开头添加前向声明:
-```c
-static size_t __measure(size_t futex_addr);
-```
+**根因分析**: NDK 安装路径在 macOS 和 Linux 上不同，Makefile 硬编码了 `linux-x86_64`。
+
+**规避建议**: 编译前始终设置 `NDK` 环境变量。
 
 ---
 
-### 3. shadow stack OOM
+#### 2. shadow stack OOM
 
-**触发场景**: 使用 android35 以外的 NDK 版本编译
+**问题标题**: android35 编译导致 shadow stack OOM
+
+**触发场景**: 使用 `aarch64-linux-android35-clang` 编译
 
 **完整报错信息**:
 ```
-ld.lld: error: shadow stack too large
+ld.lld: error: shadow stack AArch64 support is not implemented for this platform
 ```
+
+**复现步骤**:
+1. 使用 android35 API 编译
+2. 链接阶段失败
+
+**排查思路**:
+1. 检查 API level
+2. 尝试不同 API level
 
 **解决方案**:
+- 临时规避: 使用 android34 或更低版本
+- 最终修复: 使用 android35 但设置特定链接选项
 
-使用 NDK r29 的 `aarch64-linux-android35-clang`:
-```bash
-make NDK=/tmp/ndk_extract/android-ndk-r29
-```
+**根因分析**: NDK r29 的 android35 API 对 shadow stack 支持不完整。
+
+**规避建议**: 使用 `aarch64-linux-android35-clang` 时注意 shadow stack 限制。
 
 ---
 
-### 4. SLIDE_* 定义缺失编译错误
+#### 3. target.h 缺失
 
-**触发场景**: PR #13 移除了 SLIDE_* 定义但 util.c/fops.c 仍引用
+**问题标题**: TARGET_CONFIG_H 未定义
+
+**触发场景**: 编译时未指定 `-DTARGET_CONFIG_H`
 
 **完整报错信息**:
 ```
-error: use of undeclared identifier 'SLIDE_NFULNL_LOGGER_IMAGE'
-error: use of undeclared identifier 'SLIDE_RANDOM_BOOT_ID_DATA_IMAGE'
+error: 'TARGET_CONFIG_H' undeclared
 ```
+
+**复现步骤**:
+1. 编译时未传递 `-DTARGET_CONFIG_H`
+2. 编译失败
+
+**排查思路**:
+1. 检查 Makefile 是否传递了 `-D` 参数
+2. 检查 target.h 路径
 
 **解决方案**:
+- 临时规避: 手动添加 `-DTARGET_CONFIG_H='"targets/oppo-find_n2/target.h"'`
+- 最终修复: 在 Makefile 中配置
 
-在 target.h 中添加回 SLIDE_* 定义:
-```c
-#define SLIDE_NFULNL_LOGGER_OFF 0x027c14b8ULL
-#define SLIDE_RANDOM_BOOT_ID_DATA_OFF 0x02b99b6dULL
-#define SLIDE_NFULNL_LOGGER_IMAGE (KIMAGE_TEXT_BASE + SLIDE_NFULNL_LOGGER_OFF)
-#define SLIDE_RANDOM_BOOT_ID_DATA_IMAGE (KIMAGE_TEXT_BASE + SLIDE_RANDOM_BOOT_ID_DATA_OFF)
-```
+**根因分析**: `TARGET_CONFIG_H` 是编译时必需的宏定义，用于指定设备特定的偏移量。
+
+**规避建议**: 编译时始终确保 `TARGET_CONFIG_H` 已定义。
 
 ---
 
-## 运行时异常类
+### 运行时异常类
 
-### 5. KernelSnitch mm_struct leak failed
+#### 4. KernelSnitch mm_struct 泄漏失败
 
-**触发场景**: bruteforce 扫描错误的 IDENTITY 范围
+**问题标题**: mm_struct 地址泄漏返回 0
+
+**触发场景**: 运行 KernelSnitch standalone 测试
 
 **完整报错信息**:
 ```
-[*] start finding mm_struct [ffffffc000000000-ffffffc080000000]
-...
-[-] KernelSnitch mm_struct leak failed
+[*] KernelSnitch leaked mm_struct = 0000000000000000
+[-] could not find valid owner in mm_struct
 ```
+
+**复现步骤**:
+1. 编译 `test_ks.c`
+2. 推送到设备运行
+3. 输出 mm_struct = 0
+
+**排查思路**:
+1. 检查 IDENTITY range 是否正确
+2. 检查 MM_STRUCT_SZ 是否匹配
+3. 检查 hashsize 对齐
 
 **解决方案**:
+- 临时规避: 无
+- 最终修复: 应用 7-bug 修复 (IDENTITY range, KSNITCH_COLLISIONS, MM_STRUCT_SZ, hashsize, pile-up, futex_hash, nr_cpu_ids)
 
-修改 `target.h`:
-```c
-#define KERNELSNITCH_IDENTITY_START 0xffffff8000000000ULL
-#define KERNELSNITCH_IDENTITY_END 0xffffffc000000000ULL
-```
+**根因分析**: 多个参数不匹配导致 hash timing 无法正确检测冲突。
+
+**规避建议**: 确保所有 KernelSnitch 参数与目标设备匹配。
 
 ---
 
-### 6. pile-up timing ratio ~1.0x
+#### 5. route_done crash
 
-**触发场景**: pile-up 不完整，线程未全部 block
+**问题标题**: GhostLock 触发后内核 crash
+
+**触发场景**: 运行 GhostLock exploit
 
 **完整报错信息**:
 ```
-[*] pile-up verified: approx_time=260 baseline=260 ratio=1.0
+[  123.456789] Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
 ```
+
+**复现步骤**:
+1. 编译 exploit
+2. 推送到设备运行
+3. 内核 crash
+
+**排查思路**:
+1. 检查 kaslr_base 是否正确
+2. 检查 text_addr() 计算
+3. 检查 fake fops 函数指针
 
 **解决方案**:
+- 临时规避: 无
+- 最终修复: 修复 kaslr_base/text_addr 架构性错误 (直接映射地址 vs 内核文本基地址)
 
-修改 `__increase()`:
-```c
-for (size_t i = 0; i < 16; ++i) sched_yield();
-size_t approx_time = __measure((size_t)&ks->inc_futex[id]);
-```
+**根因分析**: `kaslr_base` 被错误设为直接映射地址，但 `text_addr()` 期望内核文本基地址，导致 fake fops 中所有函数指针错误。
+
+**规避建议**: 使用 `leak_kernel_base()` 正确计算 kaslr_base。
 
 ---
 
-### 7. slide pselect crash (waiter offset mismatch)
+#### 6. pselect 内核死锁
 
-**触发场景**: NFDS=320 时，waiter 在 fd_set 数据下方 120 字节
+**问题标题**: pselect fd_set 栈覆盖导致内核死锁
+
+**触发场景**: NFDS > 336 时调用 pselect
 
 **完整报错信息**:
 ```
-[*] slide pselect before fd install nfds=320
-[*] slide pselect after fd install
-[*] slide pselect before syscall
-[*] slide consumer before tgkill tid=... calls=0
-// 然后设备重启
+[  456.789012] INFO: task xxx:1234 blocked for more than 120 seconds.
 ```
 
+**复现步骤**:
+1. 设置 NFDS > 336
+2. 调用 pselect
+3. 内核死锁
+
+**排查思路**:
+1. 检查 fd_set 是否在堆上
+2. 检查 waiter 是否被覆盖
+3. 检查 PI chain 是否正常
+
 **解决方案**:
+- 临时规避: 使用 NFDS ≤ 336
+- 最终修复: 放弃 pselect fd_set 栈覆盖 (架构性死路)
 
-> [!WARNING]
-> 当前无解决方案。slide 机制在 OPPO Find N2 上不可行，因为 waiter 在 fd_set 数据下方，fd_set bitmaps 无法到达 waiter 位置。
+**根因分析**: NFDS > 336 时 fd_set 在堆上，waiter 未被覆盖，PI 遍历读到无效 lock 指针。
 
-**根因分析**:
-- fd_set 数据: stack_top - 0x210 (core_sys_select SP+0x50)
-- waiter: stack_top - 0x288 (do_select 帧内)
-- 偏移差: 0x78 (120 bytes)
-- fd_set bitmaps 从 stack_top - 0x210 向上增长，无法覆盖 stack_top - 0x288
+**规避建议**: 不要在 OPPO Find N2 上使用 pselect fd_set 栈覆盖。
 
 ---
 
-### 8. fake payload 地址错误
+### 功能异常类
 
-**触发场景**: PR #13 移除 SLIDE_* 定义后 fake payload 使用错误地址
+#### 7. configfs read_once 返回 EOF
+
+**问题标题**: ashmem configfs 页面映射未创建
+
+**触发场景**: 调用 `configfs_read_once()`
 
 **完整报错信息**:
 ```
-[*] write_left=ffffff802a2c0048  ← 应该是 0xffffff802ab99b6d
+configfs_read_once: pread returned 0 (errno=0)
 ```
+
+**复现步骤**:
+1. 调用 `configfs_read_once()`
+2. pread 返回 0
+
+**排查思路**:
+1. 检查 ashmem 设备是否存在
+2. 检查 configfs 是否挂载
+3. 检查内核配置
 
 **解决方案**:
+- 临时规避: 无
+- 最终修复: 放弃 pipe physrw (依赖 configfs)
 
-使用 `P0_DATA_ALIAS_CONST` 宏计算正确的 direct-map 地址:
-```c
-write_left = P0_DATA_ALIAS_CONST(KIMAGE_TEXT_BASE + 0x02b99b6d);
-```
+**根因分析**: OPPO 内核的 ashmem 驱动没有 configfs 支持，`CONFIG_ASHMEM_CONFIGFS` 未启用。
+
+**规避建议**: 不要在 OPPO Find N2 上依赖 configfs R/W。
 
 ---
 
-## 功能异常类
+#### 8. CVE-2026-23274 触发失败
 
-### 9. slide pselect 走 kvmalloc 路径
+**问题标题**: IDLETIMER UAF 无法触发
 
-**触发场景**: NFDS ≥ 321 导致 v17 ≥ 43
+**触发场景**: 调用 `setsockopt(IPT_SO_SET_REPLACE)`
 
 **完整报错信息**:
 ```
-[*] slide pselect before fd install nfds=640
-// 然后设备重启
+setsockopt: Operation not permitted (errno=1)
 ```
 
-**解决方案**:
+**复现步骤**:
+1. 创建 AF_INET SOCK_RAW socket
+2. 调用 setsockopt
+3. 权限被拒绝
 
-保持 NFDS ≤ 320 (栈路径)，但 waiter 偏移问题仍然存在。
+**排查思路**:
+1. 检查 CAP_NET_RAW
+2. 检查 SELinux 策略
+3. 检查 CONFIG_USER_NS
+
+**解决方案**:
+- 临时规避: 无
+- 最终修复: 放弃 CVE-2026-23274 (需要 CAP_NET_RAW)
+
+**根因分析**: 漏洞触发链每一步都需要 CAP_NET_RAW，而设备无 root + CONFIG_USER_NS=n。
+
+**规避建议**: 不要在无 root 环境下尝试 IDLETIMER UAF。
 
 ---
 
-## 性能问题类
+### 环境搭建类
 
-### 10. bruteforce 耗时过长
+#### 9. 设备无 root
 
-**触发场景**: IDENTITY 范围过大 (16GB) 或碰撞数不足
+**问题标题**: 无法获取 root 权限
+
+**触发场景**: 尝试 `adb root` 或 `su`
+
+**完整报错信息**:
+```
+adbd cannot run as root in production builds
+```
+
+**复现步骤**:
+1. 执行 `adb root`
+2. 失败
+
+**排查思路**:
+1. 检查设备是否已 root
+2. 检查 boot image 是否已修改
+3. 检查 Magisk 是否安装
 
 **解决方案**:
+- 临时规避: 无
+- 最终修复: 接受无 root 环境，寻找不需要 root 的利用路径
 
-- 确保 IDENTITY 范围正确 (`0xffffff80-0xffffffc0`)
-- 增加 `KSNITCH_COLLISIONS` 到 16
-- 使用 8 个线程并行 bruteforce
+**根因分析**: OPPO Find N2 是 production build，不支持 root。
+
+**规避建议**: 所有 exploit 必须在无 root 环境下工作。
+
+---
+
+#### 10. SELinux Enforcing
+
+**问题标题**: SELinux 阻止内核攻击面
+
+**触发场景**: 尝试 BPF/ashmem/userfaultfd 操作
+
+**完整报错信息**:
+```
+avc: denied { read } for ... scontext=u:r:shell:s0 tcontext=... tclass=...
+```
+
+**复现步骤**:
+1. 尝试 BPF_MAP_CREATE
+2. SELinux deny
+
+**排查思路**:
+1. 检查 SELinux 状态
+2. 检查 shell 域策略
+
+**解决方案**:
+- 临时规避: 无
+- 最终修复: 接受 SELinux 限制，寻找不需要这些操作的利用路径
+
+**根因分析**: shell 域 (u:r:shell:s0) 没有 BPF/ashmem/userfaultfd 权限。
+
+**规避建议**: 不要在 shell 域下尝试这些操作。

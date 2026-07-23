@@ -1,0 +1,32 @@
+# Build artifacts
+*.so
+*.o
+*.a
+
+# Embedded binaries (generated, not committed)
+exploit/build/embed/
+
+# Test program binaries
+exploit/test-programs/test_*
+!exploit/test-programs/*.c
+
+# Assets (placeholder, not committed)
+exploit/assets/
+
+# NDK
+/tmp/ndk_extract/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kernel extracted files
+vmlinux*
+boot*.img

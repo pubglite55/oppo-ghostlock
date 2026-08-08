@@ -2,7 +2,7 @@
 
 **设备**: OPPO Find N2 (SM8475/CPH2413), kernel 5.10.236, Android 16  
 **漏洞**: CVE-2026-43499 (GhostLock rtmutex stack UAF)  
-**日期**: 2026-07-14  
+**日期**: 2026-08-02  
 
 ---
 
@@ -91,28 +91,55 @@
 
 ---
 
+## 六-B、Poll Stamping via MCAST_JOIN_SOURCE_GROUP（阻塞于 rb_erase 时序）
+
+| # | 方法 | 状态 | 失败原因 |
+|---|------|------|----------|
+| 38 | MCAST_JOIN_SOURCE_GROUP offset 0x34 | ❌ | 32-bit 路径 offset，64-bit 不适用 |
+| 39 | MCAST_JOIN_SOURCE_GROUP offset 0x108 + errno=35 修复 | ❌ | errno=35 修复成功，但 ASHMEM_MISC_FOPS 未替换 |
+| 40 | MCAST_JOIN_SOURCE_GROUP + UNLOCK_PI 竞态 | ❌ | UNLOCK_PI 唤醒 waiter，但 rb_erase 不触发 |
+| 41 | MCAST_JOIN_SOURCE_GROUP + owner sched_setattr | ❌ | owner 的 pi_waiters 为空，chain walk 无操作 |
+| 42 | MCAST_JOIN_SOURCE_GROUP + waiter2 (2 节点 rb-tree) | ❌ | rb_erase 在 waiter 返回用户态前执行，spray 太晚 |
+
+**IDA 验证的 offset 计算**:
+- WRPI 路径帧: 0x90 + 0x70 + 0x1A0 = 0x2A0, waiter@0x90 → SP_base-0x210
+- setsockopt 路径帧: 0x10 + 0x80 + 0x2D0 = 0x360, greqs@0x48 → SP_base-0x318
+- Delta: 0x318 - 0x210 = 0x108 (264 字节)
+
+**根因**: rb_erase 在 waiter 线程上下文中执行（`rt_mutex_slowlock` → `remove_waiter`），在 waiter 返回用户态之前。spray（MCAST_JOIN_SOURCE_GROUP）在 waiter 返回用户态之后执行。时序上无法重叠。
+
+详细分析: [docs/poll-stamping-mcast-analysis.md](docs/poll-stamping-mcast-analysis.md)
+
+---
+
 ## 七、根因总结
 
-### 核心阻塞：没有可用的内核写原语
+### 核心阻塞：rb_erase 时序约束
 
-1. **pselect 在此内核上无法操纵 waiter 结构**（架构性原因）
+1. **MCAST_JOIN_SOURCE_GROUP poll stamping 存在不可逾越的时序约束**
+   - rb_erase 在 waiter 线程上下文中执行（`rt_mutex_slowlock` → `remove_waiter`）
+   - spray 在 waiter 返回用户态后执行
+   - 两者在同一内核栈上，但时序上无法重叠
+
+2. **pselect 在此内核上无法操纵 waiter 结构**（架构性原因）
    - NFDS > 336：fd_set 通过 bitmap_alloc() 分配在堆上
    - NFDS ≤ 336：futex_wait_requeue_pi 和 pselect 是独立调用链，栈帧不重叠
    - 120 字节偏移差无法通过任何 NFDS 值克服
+   - do_select 未内联（参考 kanxue 评论：Pixel 10 成功是因为 do_select 内联）
 
-2. **configfs/ashmem 在此内核上不支持**
+3. **configfs/ashmem 在此内核上不支持**
    - ashmem SET_NAME 使用 strcpy 行为
    - 内核地址 LE 首字节为 NUL → 截断
    - pread 返回 EOF (errno=0)
 
-3. **所有其他内核写入路径都被阻塞**
+4. **所有其他内核写入路径都被阻塞**
    - /proc/self/mem: kptr_restrict
    - /dev/mem, /dev/ion: 不存在或无任意访问
    - binder: EACCES (shell user)
 
 ### 结论
 
-**这是一个内核安全配置问题，不是代码问题。** OPPO 5.10.236 内核的安全加固阻止了所有已知的 GhostLock 利用路径。
+**OPPO 5.10.236 内核的安全加固 + rb_erase 时序约束阻止了所有已知的 GhostLock 利用路径。** 需要换一个不依赖 rb_erase 的写原语，或找到能在 hrtimer 回调之前覆盖 waiter 栈的方法。
 
 ---
 

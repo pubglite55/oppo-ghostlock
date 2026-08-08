@@ -2,6 +2,34 @@
 
 # 版本更新日志
 
+## [1.1-research] - 2026-08-02
+
+### 🔬 Poll Stamping 分析 (MCAST_JOIN_SOURCE_GROUP)
+
+**新增功能**:
+- IDA 验证 MCAST_JOIN_SOURCE_GROUP 栈帧 offset: delta=0x108 (264 字节)
+- 实现 UNLOCK_PI 竞态: owner 释放 f_pi_target 唤醒 waiter, pi_blocked_on 残留
+- 实现 waiter2 线程: 2 节点 rb-tree 确保 rb_erase 执行 rebalancing
+- 修复 errno=35 (EDEADLK): owner 等待 requeue 完成后再阻塞
+- rb_payload[0]=fake_fops: rb_set_parent 写原语修正
+
+**测试结果**:
+- 轮次 1: offset 0x34, errno=35 → 修复同步顺序
+- 轮次 2: offset 0x108, errno=0 → requeue 成功
+- 轮次 3: UNLOCK_PI 竞态 → waiter 被唤醒, WRPI ret=0
+- 轮次 4: owner sched_setattr → pi_waiters 为空, chain walk 无操作
+- 轮次 5: waiter2 (2 节点 rb-tree) → rb_erase 在 waiter 返回用户态前执行
+
+**关键发现**:
+- rb_erase 在 waiter 线程上下文中执行 (`rt_mutex_slowlock` → `remove_waiter`)
+- spray (MCAST_JOIN_SOURCE_GROUP) 在 waiter 返回用户态后执行
+- 时序约束: rb_erase 和 spray 无法重叠, MCAST_JOIN_SOURCE_GROUP 无法作为写原语
+- lock 字段残留为 f_pi_target 的 rt_mutex 指针 (有效), 不是 NULL
+
+**新增文档**:
+- docs/poll-stamping-mcast-analysis.md: 完整 IDA 分析、offset 计算、测试过程
+- docs/poll-stamping-bypass-plan.md: 绕过方案、rb_erase 时序问题
+
 ## [1.0-research] - 2026-07-14
 
 ### ✨ 新增功能

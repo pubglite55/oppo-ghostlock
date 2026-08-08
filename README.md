@@ -29,7 +29,7 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 
 ### 当前项目状态
 
-**迭代中** — 多个利用阶段已验证通过，但核心阻塞点（CFI bypass / 内核写原语）尚未突破。
+**迭代中** — 多个利用阶段已验证通过，核心阻塞点已明确（rb_erase 时序约束）。Poll Stamping via MCAST_JOIN_SOURCE_GROUP 经 IDA 精确分析和 5 轮测试，确认在 5.10 内核上存在不可逾越的时序约束。
 
 ## 核心特性
 
@@ -39,6 +39,7 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 - **sk_buff 堆喷射** — 4/4 send 成功，可用于堆布局控制
 - **PR #13 KASLR bypass** — 绕过 slide，直接计算 kaslr_base
 - **IDA Pro 全量偏移验证** — 70+ 内核偏移通过 output.elf 验证
+- **Poll Stamping 分析** — MCAST_JOIN_SOURCE_GROUP 栈帧 offset 0x108 (IDA 验证)，rb_erase 时序约束确认
 
 ## 技术栈全景
 
@@ -136,7 +137,9 @@ oppo-ghostlock/
 │   ├── architecture.md               # 架构设计文档
 │   ├── setup.md                      # 环境搭建文档
 │   ├── best-practice.md              # 开发最佳实践
-│   └── knowledge-notes.md            # 技术知识沉淀
+│   ├── knowledge-notes.md            # 技术知识沉淀
+│   ├── poll-stamping-mcast-analysis.md  # Poll Stamping MCAST_JOIN_SOURCE_GROUP 完整分析
+│   └── poll-stamping-bypass-plan.md     # Poll Stamping 绕过方案与时序分析
 ├── test-programs/                    # 测试程序
 ├── analysis-scripts/                 # 分析脚本
 ├── AGENTS.md                         # 智能体说明
@@ -155,6 +158,8 @@ oppo-ghostlock/
 - [环境搭建文档](docs/setup.md) — 开发环境配置与部署
 - [开发最佳实践](docs/best-practice.md) — 代码规范与核心原理
 - [技术知识沉淀](docs/knowledge-notes.md) — 内核结构体与漏洞机制
+- [Poll Stamping 分析](docs/poll-stamping-mcast-analysis.md) — MCAST_JOIN_SOURCE_GROUP IDA 分析、offset 计算、测试结果
+- [Poll Stamping 绕过方案](docs/poll-stamping-bypass-plan.md) — rb_erase 时序问题、绕过方向
 - [问题排查手册](TROUBLESHOOTING.md) — 全量问题排查指南
 - [常见问题](FAQ.md) — 高频问题速查
 - [版本更新日志](CHANGELOG.md) — 项目迭代记录

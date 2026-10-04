@@ -685,7 +685,9 @@ if (!selinux_ok && umh_available) {          // 只有 SELinux 仍 Enforcing 时
 |---|---|---|
 | 1 | 原版(未改) | 走到 `fops redirect`(目标 `ffffff802a91a8e8` = 我们的 fops 目标,吻合),但 `pselect returned ... calls=1 success=0` ==> **写不落地**;退回 `W1: SELinux` 后设备重启 |
 | 2 | 换我们的时序(窗口 60s / 发数 16 / shift 0) | **更糟**:死在它自己的 `KernelSnitch` 堆喷(`prepare_kernel_page retry 7/24`,`mm_struct` 泄露 7 连败)==> 我们的时序打断了它那套堆布局节奏 |
-| 3 | 只改 `SLIDE_PSELECT_WORD_SHIFT 2 -> 0`(它自己表里给我们机型的值),其余全还原 | 见下节 |
+| 3 | 只改 `SLIDE_PSELECT_WORD_SHIFT 2 -> 0`(它自己表里给我们机型的值),其余全还原 | 走到 `fops redirect`,但**5 次写尝试全部 `pselect ... calls=1 success=0`**(单次耗时 231 秒),随后退回 W1、掉线 |
+| 4 | 同上,但干净重启后(它唯一走得远的状态) | 同样结局:设备掉线 |
+
 
 对比:**同一台设备上,我们的 SLIDE 配方把写打成了 11/12**(E5 命中),而它的 pselect 路由
 `success=0`。===> 差异在**堆喷/时序的实现细节**,不在计算出的偏移(偏移三家完全一致)。
@@ -696,3 +698,24 @@ if (!selinux_ok && umh_available) {          // 只有 SELinux 仍 Enforcing 时
 - **它的 UMH 段(通用、不碰 cred)才是真正有价值的部分** —— 理论上"我们的写原语 + 它的 UMH"
   可拼装,但前提是我们的写能落地一个**指针写**到 `ASHMEM_MISC_FOPS`(本项目的 mt83 尝试全灭)。
 - 它也从未在本机验证过 —— 我们这次等于替上游做了那次 "pending device test",**结论是不通**。
+### 10.5 最终判据(四发落定)
+
+| 次 | 条件 | 结果 |
+|---|---|---|
+| 1 | 原版 | `success=0` -> 退回 W1 -> 设备重启 |
+| 2 | 换成我们的时序(窗口 60s/发数 16/shift 0) | 死在它自己的 KernelSnitch 堆喷(`prepare_kernel_page retry 7/24`) |
+| 3 | 只改 shift 2->0,其余还原 | `pselect ... success=0` x5(单次 231 秒),退回 W1,掉线 |
+| 4 | run 3 的配置 + 干净重启后 | 同样掉线 |
+
+**同一台设备、同一套偏移**:我们的 SLIDE 配方写 **11/12** 命中(E5),它的 pselect 路由
+**永远 `success=0`**,而且单次写尝试耗时 231 秒(它的 `SLIDE_PSELECT_TIMEOUT_SEC=1` 但整条
+attempt 链路把面积/重试算进去要几分钟),多次重试后设备被堆喷打崩。
+
+===> **结论:它的失败不是参数问题**。差异在堆喷/时序的**实现细节**(它用 KernelSnitch
+找 mm_struct + 自己的堆布局节奏;我们用 `slide` overlay,不需要 mm_struct 泄露)。
+三家(我们 / 它 / 它的 README 表)算出的偏移完全一致,验证的是同一套内核结构 —— 差别只在
+"谁能把那一个写真正落下去"。
+
+===> **所以:把握住我们已经拿到的东西。** 本机可交付成果 = E5(SELinux -> Permissive),
+11/12 命中、零崩机、设备零重启。它的 UMH 段留作参考(理论上"我们的写原语 + 它的 UMH"
+可拼装,但前提是我们能落地一个指针写到 `ASHMEM_MISC_FOPS`,本项目的 mt83 尝试全灭)。

@@ -274,10 +274,49 @@ Kernel Offset: 0x2c3be00000 from 0xffffffc008000000
 对本机而言,唯一必须正确的绝对值是 `P0_KERNEL_PHYS_LOAD = 0xa8000000`,而它有两个独立来源
 (IDA/XBL 与 cheese exploit 的硬编码)。
 
-### 6.6 下一步(按优先级)
+### 6.6 stamp 位移扫描 + 根因定论
 
-1. 查明 `pselect` 立即返回的原因 → 让 `calls>0`(竞态窗口成立)。
-2. 用 `boot_id` 写验证(`PSELECT_CRED_BOOTID`)确认写原语,无需 task 地址。
-3. 写原语成立后:覆盖 `ASHMEM_MISC_FOPS` → configfs/pipe 读写 → `init_task.tasks` 按 tgid 找自身 task
-   (替代被 SELinux 关闭的 perf 泄露)。
+新增 `PSELECT_STAMP_SHIFT`(在 512B 缓冲内按 8 字节平移 fake waiter 全部字段),扫
+0/1/2/4/8/16/32 七个位移,判据仍是 `boot_id` 零写回读:
+
+| shift | 0 | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|---|
+| boot_id | 未变 | 未变 | 未变 | 未变 | 未变 | 未变 | 未变 |
+| 设备 | 未重启 | — | — | — | — | — | — |
+
+**同时拿到了决定性的那一行**(此前被 grep 漏掉):
+
+```
+[*] mt59: requeue fired ret=-1 errno=35          ← EDEADLK,每一发都是
+[*] mt60: waiter FWRQ ret=-1 errno=110 ETIMEDOUT  ← waiter 超时唤醒,从未拿到锁
+```
+
+把上游自己的注释与实测对上,根因唯一:
+
+> `slide.c`: "内核 5.10 源码实证 (futex.c 2152-2167):CMP_REQUEUE_PI **撞 PI 环返回
+> -EDEADLK 时只 break 循环把错误交还调用者,waiter 不会被唤醒也不会挂树**"
+
+⇒ 当前拓扑(waiter `LOCK_PI(f_pi_chain)` + 在 `f_pi_target` 上 `WAIT_REQUEUE_PI`,owner
+持有 target 并在 chain 上排队)**形成了 PI 环** ⇒ requeue 返回 EDEADLK ⇒ **waiter 从未挂到目标
+PI 树上 ⇒ 不存在可毒化的 rb_node ⇒ stamp 打在哪个偏移都无意义**。位移扫描全灭是结构性的,
+不是标定问题。上游 R4 尸检也记过同一结论:"R2/R3/R4 全部断链在 stack_copy 之前"。
+
+**因此下一步不是标定,而是改拓扑**:让 requeue *成功*(waiter 真正排进 target 的 PI 树),
+才能谈 stamp 落点。这正是需要真正改 `futex` 拓扑设计的一步。
+
+### 6.7 下一步(按优先级)
+
+1. **改 futex 拓扑,让 requeue 真正成功**(当前 EDEADLK=环形 ⇒ waiter 不挂树 ⇒ 无节点可毒)。
+   这是唯一的前置条件;在此之前任何 stamp/位移标定都没有意义。
+2. requeue 成功后 → 用 `boot_id` 零写判据确认写原语 → 再加 `PSELECT_STAMP_SHIFT` 标定落点。
+3. 写原语成立后:把 task 地址来源从被 SELinux 禁掉的 perf 换成 `init_task.tasks` 遍历
+   (框架自带 `find_task_by_tgid`)。
 4. E5(enforcing 清零,`SELINUX_STATE_OFF+0`)→ C(cred → init_cred 别名)→ gate(ksud late-load)→ HOLD。
+
+### 6.8 已放弃/已证伪的路径(避免重走)
+
+- **KGSL/cheese**:231/231 全灭,GPU 侧机制不生效(§0)。
+- **configfs 验证**(`try_cfi_stage`):`direct write errno=22 EINVAL` —— 本机 ashmem 无 configfs 支持
+  (旧项目文档已记 DEAD)。改用 `boot_id` 判据后可完全绕开。
+- **perf 泄露**:SELinux 只放行 `exclude_kernel=1`(纯用户态采样),采内核寄存器被拒(§6.3a)。
+- **pselect fd_set 覆盖**:竞态可成立但打不出写(§6.4①)。

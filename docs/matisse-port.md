@@ -304,7 +304,7 @@ PI 树上 ⇒ 不存在可毒化的 rb_node ⇒ stamp 打在哪个偏移都无�
 **因此下一步不是标定,而是改拓扑**:让 requeue *成功*(waiter 真正排进 target 的 PI 树),
 才能谈 stamp 落点。这正是需要真正改 `futex` 拓扑设计的一步。
 
-### 6.9 栈深度静态推导(纯静态,未碰设备;解释了全部失败)
+### 6.7 栈深度静态推导(纯静态,未碰设备;解释了全部失败)
 
 判据:所有局部量都在同一个线程的内核栈上,syscall 入口 sp 相同,于是
 `局部深度 = Σ(调用链各帧) - 帧内偏移`。`rt_waiter` 的位置由
@@ -326,16 +326,50 @@ PI 树上 ⇒ 不存在可毒化的 rb_node ⇒ stamp 打在哪个偏移都无�
    自己调用的 `slide_pselect_stack_copy()`(即 **不设 `PSELECT_STAMP`**,
    走 `mt19` overlay 分支)。
 
-### 6.10 下一步(按优先级)
+### 6.8 ★里程碑:写原语在 OPPO 上成立(2026-10-04)
 
-1. **用正确的原语**:SLIDE 路径 + **不设** `PSELECT_STAMP` ⇒ 走 `slide_waiter_thread` 内的
-   pselect overlay(几何偏移 0,已由 §6.9 静态证实),判据 `boot_id`。
-2. 若仍无写:改用 `PSELECT_NO_UNPOISON=1` 让毒指针在 sched
-   风暴期间保持存活(已知会触发 panic;测试阶段可接受,用 pstore/重启迭代)。
-3. 写原语成立后:task 地址来源改用 `init_task.tasks` 遍历(perf 被 SELinux 禁) →
-   E5(`state+0` 清零)→ C(cred → init_cred 别名)→ gate(ksud late-load)→ HOLD。
+```
+BOOTID_BEFORE: 43d19789-ae5b-4a91-9a28-6b5e55b9cf6b
+BOOTID_AFTER:  04dd2d88-ffff-ff91-9a28-6b5e55b9cf6b      ← UUID 被改写
+UPTIME: 2297.55 -> 2329.49                                ← 设备未重启
+```
 
-### 6.8 已放弃/已证伪的路径(避免重走)
+配置(全部由 §6.9 的静态推导 + upstream mt61 注释推出,**未启用 NO_UNPOISON**):
+
+```
+PSELECT_SKIP_WARMUP=1 PSELECT_SLIDE_TRIGGER=1 PSELECT_RETRY=1
+PSELECT_TREE_PC=ffffff802ab99b66        # A=boot_id+1, pc=A-8(偶数⇒RED)
+PSELECT_WINDOW_SECONDS=60               # 长窗口 = A1_1 赢形态
+PSELECT_TRIGGER_SHOTS=16
+（不设 PSELECT_STAMP —— setsockopt 那条已证结构够不到）
+```
+
+三条必要条件(缺一不可,均已实测):
+
+1. **原语必须是 pselect 的 `stack_fds` 覆盖**:其缓冲恰覆盖 waiter 起点(偏移 0);
+   `setsockopt(MCAST_JOIN_SOURCE_GROUP)` 的 264 B 缓冲整体深 0x148,结构上够不到。
+2. **必须跑在 waiter 线程**(`slide_waiter_thread` 内调用),毒节点只在该线程栈上。
+3. **窗口必须足够长**:consumer 风暴落在窗口内才会在 fdset 帧存活期间触发 erase
+   (upstream mt61:"6 发触发全部落在窗口关闭之后 = erase 从未在 fdset 帧存活期间发生 =
+   写结构上不可能")。
+
+这一步打通后,整个利用链只剩"取自身 task 地址"这一环 —— perf 被 SELinux 关闭,
+改用 `init_task.tasks` 遍历即可。
+
+### 6.9 下一步(按优先级)
+
+> 写原语已于 §6.8 打通。剩下只有"取自身 task 地址"这一环。
+
+1. 用**已成立的写原语**读 task:实现基于 `init_task.tasks` 链表的遍历(框架自带
+   `find_task_by_tgid`),替代被 SELinux 关闭的 perf 泄露;或直接用写原语改写
+   `ASHMEM_MISC_FOPS` 取得读写原语后再遍历。
+2. E5:`SELINUX_STATE_OFF+0` 零写(Permissive)。
+3. C:`task+0x778`(real_cred)与 `task+0x780`(cred)都写 `init_cred` 别名
+   —— 两个指针必须一致,否则 `commit_creds` 的 `BUG_ON` panic。
+4. gate(真 uid=0 时 `ksud late-load`)→ `PSELECT_HOLD=1` 常驻。
+5. **交付前**确保默认配置下设备不崩(不启用 `NO_UNPOISON`;长窗口本身无崩溃风险)。
+
+### 6.10 已放弃/已证伪的路径(避免重走)
 
 - **KGSL/cheese**:231/231 全灭,GPU 侧机制不生效(§0)。
 - **configfs 验证**(`try_cfi_stage`):`direct write errno=22 EINVAL` —— 本机 ashmem 无 configfs 支持

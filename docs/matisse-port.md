@@ -719,3 +719,52 @@ attempt 链路把面积/重试算进去要几分钟),多次重试后设备被堆
 ===> **所以:把握住我们已经拿到的东西。** 本机可交付成果 = E5(SELinux -> Permissive),
 11/12 命中、零崩机、设备零重启。它的 UMH 段留作参考(理论上"我们的写原语 + 它的 UMH"
 可拼装,但前提是我们能落地一个指针写到 `ASHMEM_MISC_FOPS`,本项目的 mt83 尝试全灭)。
+
+## 11. 厂商反 root 组件的情报(第三方 RE,来源 `ghostlock-oneplus` issue #31)
+
+本机第二阶段 4/4 被"看门狗"打断(§9)。在给上游提 issue(#69)时,从同一内核条目的长讨论
+(`JoinChang/ghostlock-oneplus` issue #31,评论者 `diyiqiuye`,2026-09-17)**拿到了该组件的逆向情报**
+(`oplus_security_guard.ko`,OPPO SM8450/SM8475 同一份源码不同编译)。
+
+### 11.1 它监视什么
+
+| 字段 | 偏移 |
+|---|---|
+| `syscallno` | `task+0xdf8` |
+| `uid` / `euid` | `task+0xe00` / `task+0xe08` |
+| `gid` / `egid` | `task+0xe10` / `task+0xe18` |
+
+- **只比这四个字段的"下降沿"**;**capabilities 一个字节都不读**(===> 改 caps 不触发,改 uid 触发)。
+- 上报走 `kevent_send_to_user`;击杀 `oplus_root_killed` → `printk` + `do_exit(SIGKILL)`(只杀当前任务)。
+
+### 11.2 豁免表(`.rodata+0`,索引 143–214)===> **本机第二阶段的关键线索**
+
+只有下列 syscall 里发生的 uid 变化**不上报**:
+
+```
+143 setgid   144 setreuid  145 setuid   146 setresuid  147 getresuid  149 getresgid
+203 getsockname  204 getpeername  208 getsockopt  210 sendmsg  213 brk  214 munmap
+```
+
+其余 60 项一律上报 + 击杀。第三方结论原话:**「uid 变更走 146(setresuid) 就行,不需要写 `g_boot_state`」**。
+
+### 11.3 与我们实测的差异 + 由此推出的假说
+
+| 观察 | 来源 |
+|---|---|
+| 击杀 = `do_exit(SIGKILL)`(只杀任务,不重启) | 第三方 RE(#31) |
+| **本机 = 整机重启**(`ro.boot.bootreason = reboot,malicious_app_try_to_root_devices`,内核零 OOPS、pstore 空) | **我们的实测(§9)** |
+
+===> 推测:**本机还存在一条"重启/救援"路径**(独立于 `do_exit` 的那条),或者该组件的版本在本机上更激进。
+这一条是我们的新贡献,已写进 issue #69。
+
+### 11.4 对第二阶段的可操作含义(未验证)
+
+我们的 C 阶段是在 **`pselect`(syscall 72,`*_sys_pselect6`,不在豁免表内)** 的调用过程中把目标任务的
+uid 从 2000 改成 0 的 ==⇒ 按 11.1 的判据,这正是"被上报 + 击杀"的形态,实测确实 4/4 被打断。
+
+**假说**:若让 cred 交换**发生在豁免表内的 syscall 期间**(首选 `146 setresuid`;
+`213 brk` / `214 munmap` 亦可作为载体),则 uid 下降沿落在豁免区内,理应不上报。
+
+**状态:未验证(不再擅自测试)**。本机交付与设备状态保持不变:SELinux `Enforcing`、设备健康、无残留钩子。
+若要验证,唯一稳妥的做法是在 QEMU 实验台上先跑通(§7),而不是直接在零售机上试。

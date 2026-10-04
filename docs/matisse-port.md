@@ -592,3 +592,33 @@ adb -s 84cb96e2 shell 'getprop ro.boot.bootreason; getprop sys.boot.reason'
 # 期望(在跑过 C 阶段之后):reboot,malicious_app_try_to_root_devices
 adb -s 84cb96e2 shell 'dmesg | grep -aiE "bug|panic|oops" | tail'   # 期望:空
 ```
+
+### 9.4 补充取证(2026-10-04 深夜):perf 泄露**不**触发看门狗
+
+为把触发范围收窄,做了两步对照实验(先确认 `enforce=0`,再单独跑"只泄露、不写":
+
+```bash
+# 第一步:E5(重试直到 permissive)
+#   E5 attempt 1 -> enforce=0                          ← 命中(累计 9/10)
+# 第二步:只做 perf 泄露,不写任何内存
+#   mt28c: perf task=0xffffff8930254a00 (185/256 votes)
+#   mt41: OBS task=ffffff8930254a00 cred_cand=0000000000000000
+# 判据
+#   uptime 532.41 -> 581.49   设备存活,enforce 仍为 0
+#   >>> device SURVIVED — perf leak does NOT trigger the watchdog
+```
+
+| 步骤 | 是否触发看门狗 |
+|---|---|
+| E5(改 SELinux 状态) | ❌ 不触发(9/10 全活) |
+| **perf 内核采样泄露(取 task)** | ❌ **不触发**(本节实证) |
+| C 阶段的写路径 / 其余机制 | ✅ 触发(4/4 重启,理由串 `malicious_app_try_to_root_devices`) |
+
+⇒ 看门狗检测的**不是"拿到 root",而是某个提权**动作**,且该动作恰好落在拿真 root 的唯一必经之路上
+(取 task 是安全的,所以只能是 `cred` 覆写那一步及其配套)。
+
+**现实评估**:即使继续缩小到具体哪一条指令,要打穿的也是厂商专门用来"防 root"的安全组件;
+在零售机、且无工程机/开发机的前提下,这不是调参问题,而是另一场对抗 —— 而且它检测的是**尝试**本身,
+意味着**任何成功的 cred 覆写都会被拦**。故结论不变(有取证支撑):
+
+> 本机交付 = **E5(宽容)9/10 命中、零崩机**;第二阶段在此机不可达成。

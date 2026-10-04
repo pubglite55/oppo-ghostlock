@@ -970,3 +970,36 @@ cd /data/local/tmp && timeout 420 /system/bin/ls /dev/null
 * **`PSELECT_RETRY=1`**:单轮即退。8 轮连打会让悬垂 `pi_blocked_on` 叠加,几分钟内必黑屏。
 * **日志写 `/data/local/tmp`,跑完立刻 pull**(不要写 `/sdcard`:shell 域访问不了 FUSE,会 `Transport endpoint is not connected`,还会让整条命令因重定向失败而不执行)。
 * **每发之间先确认设备状态**;一旦 `framework` 在跑完 1~3 分钟内变 DOWN,立即收手重启。
+
+### 13.5 KernelSU 装载环节的三个实测发现(2026-10-05)
+
+root 已 3/3 复现(N2 / P2 / K3,全部设备完好),但 KernelSU 尚未 Live。三个确定结论:
+
+**(a) `ksud late-load` 以 uid=2000 运行会静默失败** —— 返回 `rc=0` 却什么都不装:
+
+```
+[*] ksud late-load kmi=android12-5.10
+[*] late-load rc=0
+[*] modules:      <- 空
+[*] su:           <- 空
+```
+⇒ 装载必须由**真 root**执行(与 matisse WIN 文档"坑1:预开 KO fd 被 churn ⇒ EBADF;门槛重开 ⇒
+EACCES/ENOENT,故改用 gate 里以 root 跑 ksud late-load"一致)。
+
+**(b) OPPO 守护进程会主动拦截 KernelSU 管理器** —— dmesg 实证:
+
+```
+[ROOTCHECK-CAP-INFO]:oplus_root_check_succ,payload:0$$new_euid@@0$$…$$curr_name@@kernelsu_zygote$$enforce@@1
+[ROOTCHECK-EXEC-INFO]:…/me.weishu.kernelsu…/libksud.so result execve_block
+note: libksud.so[21539] exited with preempt_count 1
+```
+⇒ 即使模块加载成功,App 侧仍会被 `execve_block` ⇒ 装载前需用 root 处理该守护(仅临时停用,不涉及
+用户已排除的毁灭性操作)。
+
+**(c) exploit 的 root payload 里的 `system("sh ksu_go.sh &")` 实际未生效** —— `mt47: ksud loader launched`
+是无条件打印,真 root 那发里 `ksu_go.log` 从未生成 ⇒ 该 `system()` 调用失败(需改为显式 fork+execve)。
+
+**设备存活纪律的补充证据**:K3 那发**去掉了 `PSELECT_ROOT_EXIT`**(持毒进程按原设计 park,不 `_exit`
+⇒ 不触发 mm teardown ⇒ 不 panic),结果 **root 成功且设备完好**(uptime 连续、framework OK),
+与 matisse 文档"坑3:C 崩机 6/8 的根因是持毒进程自退 ⇒ mm teardown ⇒ lock_page_memcg/do_exit panic,
+解法 PSELECT_HOLD=1 永久 park"完全一致。**结论:交付配方应去掉 `PSELECT_ROOT_EXIT`。**

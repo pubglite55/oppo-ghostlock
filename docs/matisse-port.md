@@ -548,3 +548,47 @@ adb -s 84cb96e2 shell 'cd /data/local/tmp && (setsid sh watch_enforce.sh &); (se
 
 **若再黑屏**:采样器已把"黑屏时刻的 enforce 值 / 进程数 / uptime"留在 `/data/local/tmp` 里
 (重启后仍可读),据此判定 §8.1 的哪条假设成立,再针对性修 —— 这是目前唯一能推进的方向。
+
+---
+
+## 9. ★决定性发现:C 阶段"黑屏/重启"的真因是**厂商反 root 看门狗**(2026-10-04)
+
+E5 第 8 次命中(36 秒)之后跑 C 阶段,设备再次重启。**重启后取证**:
+
+```
+$ adb shell getprop ro.boot.bootreason
+reboot,malicious_app_try_to_root_devices
+$ adb shell getprop sys.boot.reason
+reboot,malicious_app_try_to_root_devices
+$ adb shell dmesg | grep -aiE "bug|panic|oops|watchdog"   -> 无
+$ ls /sys/fs/pstore/                                      -> 无转储
+```
+
+⇒ **不是内核 panic,也不是用户态死锁** —— 是 **OPPO/ColorOS 的安全组件检测到"提权尝试"后主动重启整机**
+(重启原因串由系统写入,重启后由 bootloader 回读)。
+
+### 9.1 它解释掉了此前所有困惑
+
+| 此前的现象 | 真因 |
+|---|---|
+| C 阶段 3/4 次"黑屏/重启" | 厂商看门狗重启(不是崩溃) |
+| **写是否命中都一样** | 它检测的是**提权尝试**本身,与写结果无关 |
+| E5 单独跑 **8/8 全活** | 改 SELinux 状态**不触发**该检测 |
+| 内核日志零 OOPS、无 pstore | 非内核故障 |
+| 之后 `enforcing` 回到 1 | 重启复位 |
+
+### 9.2 结论:第二阶段在本机上**结构上不可交付**
+
+- 这个看门狗是**厂商安全机制**,不在 exploit 可控范围内 ⇒ **无法让 C 阶段变成"不崩"的形态**;
+- 因此"成果不能 crash"与"打 C 阶段"在本机**互斥** —— 印证了先前"C 阶段不作交付"的判断
+  (此前只是经验判断,现在有取证);
+- 交付仍为:**E5(SELinux → Permissive)8/8 命中、零崩机**;
+- 若将来要在**开发机/工程机**(或关闭该安全组件的设备)上继续第二阶段,§8.2 的流程与 §9 的取证方法可直接复用。
+
+### 9.3 复现"看门狗"取证(设备可用时,1 分钟)
+
+```bash
+adb -s 84cb96e2 shell 'getprop ro.boot.bootreason; getprop sys.boot.reason'
+# 期望(在跑过 C 阶段之后):reboot,malicious_app_try_to_root_devices
+adb -s 84cb96e2 shell 'dmesg | grep -aiE "bug|panic|oops" | tail'   # 期望:空
+```

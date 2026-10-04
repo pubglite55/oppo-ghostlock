@@ -369,7 +369,27 @@ PSELECT_TRIGGER_SHOTS=16
 4. gate(真 uid=0 时 `ksud late-load`)→ `PSELECT_HOLD=1` 常驻。
 5. **交付前**确保默认配置下设备不崩(不启用 `NO_UNPOISON`;长窗口本身无崩溃风险)。
 
-### 6.10 已放弃/已证伪的路径(避免重走)
+### 6.10 写原语的可靠性标定(2026-10-04 晚)
+
+重复"已验证成功的那组"配置 3 次(判据:boot_id 是否改变 + uptime 是否中断):
+
+| run | 结果 | 说明 |
+|---|---|---|
+| 1 | **WRITE-OK** | `dec18dcb-… → 84cabe89-ffff-ff13-…`,uptime 123→210 |
+| 2 | **CRASH**(设备消失) | 随后自动重启 |
+| 3 | no-write | uptime 35→130 |
+
+⇒ **`write-ok=1 / crash=1 / no-write=1`**:该写原语目前是**概率性**的。
+这与 upstream README 自述一致 —— *"R/C 两步存在结构性概率崩机"*。
+
+风暴开火时机(`PSELECT_ENTER_DELAY_USEC`,upstream 点名的头号嫌犯)初扫:
+`0 → no-write`、`1s → CRASH`;仅调时间不足以变确定。
+
+**因此"交付成果不崩"这一约束的现状**:当前配置下约 1/3 概率触发 panic。
+后续要做的是找稳定性旋钮(候选:`waiter->lock` 指向的喷页是否被回收 ⇒ 陈旧解引用、
+发数、窗口长度、时序),而不是继续堆功能。
+
+### 6.11 已放弃/已证伪的路径(避免重走)
 
 - **KGSL/cheese**:231/231 全灭,GPU 侧机制不生效(§0)。
 - **configfs 验证**(`try_cfi_stage`):`direct write errno=22 EINVAL` —— 本机 ashmem 无 configfs 支持

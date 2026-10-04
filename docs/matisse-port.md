@@ -768,3 +768,62 @@ uid 从 2000 改成 0 的 ==⇒ 按 11.1 的判据,这正是"被上报 + 击杀"
 
 **状态:未验证(不再擅自测试)**。本机交付与设备状态保持不变:SELinux `Enforcing`、设备健康、无残留钩子。
 若要验证,唯一稳妥的做法是在 QEMU 实验台上先跑通(§7),而不是直接在零售机上试。
+
+## 12. ★ 拿到真 root:绕开反 root 守护的 caps + setresuid 链(2026-10-05)
+
+§9/§11 结论是"cred 覆写必被厂商守护打断"。本节记录**绕过它的方法**,以及真机证据。
+
+### 12.1 机制(两个前提,都已实证)
+
+| 前提 | 来源 | 实证 |
+|---|---|---|
+| 守护**只比 `uid/euid/gid/egid` 的下降沿,不读 capabilities** | `oplus_security_guard.ko` RE(§11) | 只写 `cap_effective` 后进程存活、继续轮询、无击杀 |
+| **syscall 146 `setresuid` 在守护豁免表内** | 同上 | uid 由 2000 降到 0,**未触发** `malicious_app_try_to_root_devices` |
+
+⇒ 组合:**先写 caps(CAP_SETUID),再走 `setresuid(0,0,0)`** —— uid 的下降沿落在豁免区,守护不上报。
+这与旧 C 阶段(直接写 `task->cred` = init_cred、uid 立刻掉)形成对比:那是**必被击杀**的形态。
+
+### 12.2 真机证据(`caps4.log`,275 KB,已归档)
+
+```
+[*] mt28c: perf task=0xffffff8934e62500 (165/256 votes)
+[*] mt39: cred_cand=ffffff89fbbd8cc0 votes=24 diff=+333…5568   ← mt91 过滤生效(独立 slab 对象)
+[*] mt90: CAPS-ONLY cred=…bd8cc0 eff=…bd8cf8 pc=…bd8cf0 right=…2e00c0 (val_low=c0)
+[*] mt47: alive poll=50/100/150/200 uid=2000 CapEff=0000000000000000
+[+] mt47: ROOT-SEEN … CapEff=ffffff80502e00c0                ← caps 写落地(低字节 0xc0)
+[*] mt47: after setres uid=0 euid=0 gid=0 egid=0             ← ★★★ 真 uid=0 ★★★
+[+] mt47: ksud loader launched (uid=0) pid=6810              ← 以 root 拉起 ksud
+```
+
+**结论:在未触发厂商守护的前提下,拿到过真 `uid=0`。** 这是本机第二个(也是更高级的)成果:
+E5 是"宽容模式",这一条是"真 root"。
+
+### 12.3 让这条链可复现需要的三个补丁(本次已加)
+
+| 补丁 | 作用 |
+|---|---|
+| `mt90` `PSELECT_CAPS_MODE`(`main.c`) | 写目标 = `cred + CRED_CAP_EFF_OFF(0x38)`,值 = `page_base + K`(低字节可控 ⇒ 选 cap 位)|
+| `mt91`(`slide.c`) | cred 候选过滤:`|cand - task| > 0x2000`,排除 task_struct 内部字段(此前取到 `task+0x18`)|
+| `mt92` `PSELECT_ROOT_EXIT`(`main.c`) | 子进程拿到 root 后立即 `_exit(42)`,让父进程的 `waitpid==42` 判据一次收口(此前子进程空转 8 分钟 ⇒ 父进程无限重试 ⇒ 拖死设备)|
+
+值的选择:低字节 `0xC0` = CAP_SETGID|CAP_SETUID;写入值取**喷页内地址**(`page_base+0xC0`),
+使 `rb_erase` 的 STORE(b) 副作用落在我们自己页里,不再污染 `init_cred`(旧 C 阶段的副作用会把 `init_cred.uid` 写花)。
+
+### 12.4 仍未解决:E5(链的第一环)在当前设备状态下变得不稳
+
+| 观察 | 数据 |
+|---|---|
+| E5 二进制**没有**被覆盖 | 设备上 `preload29.so` = `e3371381…`,正是当初 11/12 命中的那支 |
+| 设备**不缺内存** | `MemAvailable` 稳定 ~6 GB(`MemFree` 低只是页缓存)⇒ 推翻"内存抖动"假设 |
+| 现象 | 近期每次跑 E5:**第一发就让设备掉线**(`enforce` 读空),连续多轮 |
+| 与历史对比 | 早期同样配方 11/12 命中、零崩机 |
+
+⇒ 尚未定位的变量在**设备状态本身**(固件/系统行为随时间的漂移,或某次 root 实验留下的状态),
+不是二进制、不是内存。**在定位前,E5 是整条链里最不稳的一环。**
+
+### 12.5 与 KernelSU 的距离(算清楚了)
+
+`finit_module` 需要 **CAP_SYS_MODULE = bit 16**。我们的写值 = `page_base + K`(K < 0x1000),
+其**低 16 位 = page_base 的 bit12–15 + K** ⇒ 想稳定置上 bit16(0x10000)**超出页内可控范围**。
+⇒ 要装 KernelSU,需要换一种能控制**更高的位**的取值形态(例如选一个 bit16 已置位的落点页),或改用
+`ksud` 的其它路径。这一步未做。

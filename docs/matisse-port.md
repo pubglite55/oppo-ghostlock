@@ -852,3 +852,42 @@ E5 是"宽容模式",这一条是"真 root"。
 尚未定位:风暴为什么**不点火**(`calls=0`)。两个候选变量:consumer 的 CPU 亲和
 (`PSELECT_CONSUMER_CPU`,注释提示"大核防饿")与调度负载(`sched_ret`)。在找到它之前,
 E5 的 miss 应当被视为**正常失败**,而不是去连打重试。
+
+### 12.7 ★ 真因:崩溃发生在 `prepare_kernel_page` 的 543-子进程喷洒,不是风暴、不是写入
+
+拿到完整日志(单发,22 行即断)后,崩溃点一目了然 —— **根本没走到 E5 的 pselect 风暴**:
+
+```
+[*] mt19: SLIDE trigger route (real CVE path)
+[*] prepare_kernel_page enter: payload=1 (0=FOPS,1=SLIDE)
+[*] prepare_kernel_page: ctxs ready, cloning 272 prepare + 204 spray + 33 pre + 34 post...
+[*] mt18-diag: pre children killed
+[ NULLs ]                                  <- 死在这里
+```
+
+规模来自内核几何,与内存无关(所以**不会自适应**)：
+
+```
+mm_objs_per_slab = ORDER3_SIZE / MM_STRUCT_SZ = 32768 / 960 = 34
+prepare = PREPARE_CTX_FACTOR(8) * 34 = 272
+spray   = (1 + MM_PARTIALS(5)) * 34  = 204
+pre     = 34 - 1 = 33 ;  post = 34       合计 543
+```
+
+代码注释("MTK: heavy cooldown before 64GB mmap — avoid system ANR/reboot"、"543 children peak")
+表明整套喷洒是为**联发科(天玑9000)**调的。本机实测内存:
+
+```
+MemTotal 15.5G / MemFree 144MB / Cached 7.4G / SwapFree 7.8G   进程数 1035
+PSS 前列: 微信 573+542MB, 支付宝 571MB, 抖音 450MB, 小红书 474MB
+内核侧: Slab 733MB + PageTables 269MB + KernelStack 163MB
+```
+
+⇒ **543 子进程 + 64GB mmap 在当前内存状态下走不完 ⇒ OOM ⇒ 内核重启。**
+这解释了此前所有困惑:风暴不点火(`seq=0`)是因为**进程在风暴之前就死了**;
+早期 11/12 命中是因为**那时设备空闲内存多**;而 `MemAvailable ~7GB` 是**可回收页缓存**,
+`fork`/喷洒需要的是匿名内存,所以"看起来还有 7GB"是假象。
+
+**修正(已验证)**:mt93 的窗口上限(见 §12.6)让 miss 不再拖死设备 —— 单发 miss 后
+`uptime` 连续、`framework OK`。**要真正跑通,必须先腾出匿名内存**(`am force-stop` 常驻大应用),
+或改造喷洒规模(风险高:slab 几何必须精确,缩小会破坏 collision)。

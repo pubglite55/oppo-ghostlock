@@ -506,3 +506,45 @@ QEMU(TCG)可用于:**验证移植能跑、拿完整日志、定结构偏移**;
 Windows 上 arm64 客户机也无可用加速 ⇒ 此路不通。
 
 ⇒ **交付仍按真机已实证的部分收口:E5(宽容)7/7 稳定命中、零崩机。**
+
+---
+
+## 8. 未决项:第二阶段(C 阶段 → 真 root)的未来实验设计
+
+**结论先行**:C 阶段在关键路径上,绕不开。
+
+- 框架里"以 root 启动 `ksud` 官方装载器"那条路(`ksu_go.sh`:SELinux 策略第 23 字节 `|0xC0`
+  + `load_policy` + `ksud late-load --kmi android12-5.10`)由 **`root_seen` 门控**(main.c)——
+  必须先拿到 root;`finit_module` 也需要 `CAP_SYS_MODULE` ⇒ **"宽容 → 直接上 KernelSU"不成立**。
+- 所以第二阶段 = E5 → C(cred 覆写)→ ksud;缺 C 就没有真 root。
+
+**已排除的**:QEMU(TCG 复现不了时序侧信道,§7)。
+
+### 8.1 待验证的假设:黑屏的真实成因
+
+C 阶段 3/3 黑屏,且**与写是否命中无关**(写落空时 `uid` 全程 2000 也照样黑),
+⇒ 是那套机制本身。候选成因(按可疑度排序,**均未验证**):
+
+| # | 假设 | 验证方法 |
+|---|---|---|
+| 1 | **进程/线程堆积**:`PSELECT_CHILD_POLLS` 默认 6000(20min)⇒ 每次运行留下长命子进程;已改 150(30s)但未复测 | 跑 C 阶段并每 10s 采样 `ps -A \| wc -l`,看是否单调上涨 |
+| 2 | **`sethostname("glroot")` 信标**(mt73 半程态分支,main.c)扰动用户态 | 采样 `getprop net.hostname` 与黑屏时刻对齐 |
+| 3 | **宽容窗口过长**:E5 成功后到 C 结束之间有 ~3 分钟 `enforce=0` | 缩短 E5 窗口(`WINDOW_SECONDS=20`)后跑 chain2,记录黑屏时刻 |
+| 4 | 触发线程死占核(60s 窗口 + 300s watchdog;owner 200s LOCK_PI) | 黑屏时采样 `/proc/loadavg` 与各核占用 |
+
+### 8.2 一次干净的复测流程(设备可用时)
+
+```bash
+# 1. 推二进制并核对 sha256(设备端必须等于本地)
+P="C:/Users/L1872/Desktop/oppo/exploit-v29/build/oppo-find_n2/bin/preload.so"
+adb -s 84cb96e2 push "$P" /data/local/tmp/preload29.so
+adb -s 84cb96e2 shell sha256sum /data/local/tmp/preload29.so
+
+# 2. 后台起采样器(200ms enforce + 10s 进程数),再跑 chain2
+adb -s 84cb96e2 shell 'cd /data/local/tmp && (setsid sh watch_enforce.sh &); (setsid sh chain2.sh e5 &)'
+
+# 3. 判据:chain2.log 出现 A1 enforce=0 与 C verdict;同时看 enf.log 有无 enforce=0→1
+```
+
+**若再黑屏**:采样器已把"黑屏时刻的 enforce 值 / 进程数 / uptime"留在 `/data/local/tmp` 里
+(重启后仍可读),据此判定 §8.1 的哪条假设成立,再针对性修 —— 这是目前唯一能推进的方向。

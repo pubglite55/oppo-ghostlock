@@ -304,14 +304,36 @@ PI 树上 ⇒ 不存在可毒化的 rb_node ⇒ stamp 打在哪个偏移都无�
 **因此下一步不是标定,而是改拓扑**:让 requeue *成功*(waiter 真正排进 target 的 PI 树),
 才能谈 stamp 落点。这正是需要真正改 `futex` 拓扑设计的一步。
 
-### 6.7 下一步(按优先级)
+### 6.9 栈深度静态推导(纯静态,未碰设备;解释了全部失败)
 
-1. **改 futex 拓扑,让 requeue 真正成功**(当前 EDEADLK=环形 ⇒ waiter 不挂树 ⇒ 无节点可毒)。
-   这是唯一的前置条件;在此之前任何 stamp/位移标定都没有意义。
-2. requeue 成功后 → 用 `boot_id` 零写判据确认写原语 → 再加 `PSELECT_STAMP_SHIFT` 标定落点。
-3. 写原语成立后:把 task 地址来源从被 SELinux 禁掉的 perf 换成 `init_task.tasks` 遍历
-   (框架自带 `find_task_by_tgid`)。
-4. E5(enforcing 清零,`SELINUX_STATE_OFF+0`)→ C(cred → init_cred 别名)→ gate(ksud late-load)→ HOLD。
+判据:所有局部量都在同一个线程的内核栈上,syscall 入口 sp 相同,于是
+`局部深度 = Σ(调用链各帧) - 帧内偏移`。`rt_waiter` 的位置由
+`futex_wait_requeue_pi` 里 `add x2, sp, #0x90` + `bl rt_mutex_wait_proxy_lock` 直接证实
+(第三参即 `&rt_waiter`;`rt_mutex_init_waiter` 在该内核里已内联)。
+
+| 原语 | 调用链(帧) | Σ | 缓冲位置 | 缓冲覆盖深度 | waiter@**0x210** |
+|---|---|---|---|---|---|
+| `setsockopt(IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP)` | `__arm64_sys_setsockopt` 0x10 + `__sys_setsockopt` 0x80 + `sock_setsockopt` 0xa0 + `ipv6_setsockopt` 0x40 + `do_ipv6_setsockopt` 0x2d0 | **0x3A0** | `do_ipv6_setsockopt [sp+0x48]`,只拷 **264 B**(`cmp w22,#0x108; b.lo→EINVAL`) | `[0x358, 0x250]` | ❌ **够不到** |
+| `pselect` 的 `stack_fds` | `__arm64_sys_pselect6` 0xa0 + `core_sys_select` 0x1c0 | **0x260** | `core_sys_select [sp+0x50]`,**256 B** | `[0x110, 0x210]` | ✅ **正好覆盖**,偏移 **0** |
+
+⇒ **两条结论**:
+
+1. **setsockopt 位移扫描全灭是结构性的** —— 该原语的缓冲整体比 waiter 深 0x148 字节,
+   改位移不可能够到(`PSELECT_STAMP_SHIFT` 因此作废)。
+2. **pselect 覆盖的几何本来就是对的(偏移 0)**,与 upstream 的 `PSELECT_WAITER_WORD_SHIFT`
+   假设一致;之前失败的原因是**跑错了线程** —— FOPS 路径的 pselect 在独立线程里执行,而
+   毒节点在 `slide_waiter_thread` 的栈上。正确用法是 SLIDE 路径里由 `slide_waiter_thread`
+   自己调用的 `slide_pselect_stack_copy()`(即 **不设 `PSELECT_STAMP`**,
+   走 `mt19` overlay 分支)。
+
+### 6.10 下一步(按优先级)
+
+1. **用正确的原语**:SLIDE 路径 + **不设** `PSELECT_STAMP` ⇒ 走 `slide_waiter_thread` 内的
+   pselect overlay(几何偏移 0,已由 §6.9 静态证实),判据 `boot_id`。
+2. 若仍无写:改用 `PSELECT_NO_UNPOISON=1` 让毒指针在 sched
+   风暴期间保持存活(已知会触发 panic;测试阶段可接受,用 pstore/重启迭代)。
+3. 写原语成立后:task 地址来源改用 `init_task.tasks` 遍历(perf 被 SELinux 禁) →
+   E5(`state+0` 清零)→ C(cred → init_cred 别名)→ gate(ksud late-load)→ HOLD。
 
 ### 6.8 已放弃/已证伪的路径(避免重走)
 

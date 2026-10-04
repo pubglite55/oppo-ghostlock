@@ -39,3 +39,7 @@ boot*.img
 *.nam
 *.til
 *.i64
+
+# large local analysis artifacts (not part of the deliverable)
+output.elf
+*_boot.img

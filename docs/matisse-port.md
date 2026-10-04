@@ -622,3 +622,77 @@ adb -s 84cb96e2 shell 'dmesg | grep -aiE "bug|panic|oops" | tail'   # 期望:空
 意味着**任何成功的 cred 覆写都会被拦**。故结论不变(有取证支撑):
 
 > 本机交付 = **E5(宽容)9/10 命中、零崩机**;第二阶段在此机不可达成。
+
+## 10. 公开方案评估:`JoinChang/ghostlock-oneplus`(387⭐)
+
+既然本机第二阶段被厂商看门狗封死,就去 GitHub 找现成方案。最成熟的候选是
+`JoinChang/ghostlock-oneplus`(锁定 bootloader 免刷机 root + KernelSU 的 CVE-2026-43499 实现)。
+
+### 10.1 它的偏移表里有**本机逐字符相同的内核条目**
+
+```
+OFFSETS_ENTRY("5.10.236-android12-9-o-g74d132f4467a", ...)   // src/devices/cph2521/offsets.h
+  .kimage_text_base      = 0xffffffc008000000
+  .off_init_task         = 0x027CC000
+  .off_init_cred         = 0x027E0BE0        <- 与我们的 0x027E0BE0 一致
+  .off_selinux_enforcing = 0x02A793C8        <- 与我们的 0x02A793C8 一致
+  .off_ashmem_misc_fops  = 0x0291A8E8        <- 与我们算出的 fops 目标一致
+  .off_slide_boot_id     = 0x02B99B6D        <- 我们的 boot_id 判据
+  .off_system_unbound_wq            = 0x027B9E88
+  .off_call_usermodehelper_exec_work = 0x001672AC
+```
+
+本机 uname 与该条目**逐字符相同**,`init_cred` 别名也打印为 `ffffff802a7e0be0`(= 我们实测值),
+===> **我们此前所有偏移推导都得到了独立第三方验证**。
+
+注意 README 自己把它标为 **"Offsets Extracted (pending device test)"** —— 作者从未在真机验证过这一条。
+
+### 10.2 它的链条(读源码核对,非照抄 README)
+
+```
+0. 运行时 uname_r 匹配偏移表                                  main.c:86-100
+1. write_root_script()                                        main.c:627
+2. PI write(pselect 触发)-> 拿到"写原语"                       <- 与我们的 E5 同一原语
+3. do_one_write(ASHMEM_MISC_FOPS, mode=4)  "fops redirect"     main.c:642
+     -> 换掉 ashmem miscdevice 的 fops 表
+     -> 此后对 configfs 的 read/write = 任意内核读写
+4. install_pipe_physrw(configfs_fd)                            pipe_physrw.c:516
+5. install_umh_root(configfs_fd)                               umh_root.c:134
+     a. pipe_phys_write_data(selinux_enforcing, 0)  <- 1 字节精确关 SELinux
+     b. system_unbound_wq -> wq -> dfl_pwq -> pool  <- 沿内核结构遍历
+     c. 伪造 work_struct 挂进 pool->worklist
+     => worker 执行 __call_usermodehelper() -> 内核以 root 跑脚本   **不碰 cred**
+6. wait_for_ksu_status()                                       main.c:337
+7. 兜底 W2:perf 泄露 task -> 写 child_task+TASK_CRED_OFF        main.c:710
+```
+
+**UMH 路径的条件门(main.c:629-645)是本机最关键的发现**:
+
+```c
+int selinux_ok = check_selinux_off();
+if (!selinux_ok && umh_available) {          // 只有 SELinux 仍 Enforcing 时才走 UMH
+    do_one_write(data_addr(ASHMEM_MISC_FOPS), "fops redirect", 4);
+    selinux_ok = check_selinux_off();
+}
+```
+
+===> **我们的 E5(提前关 SELinux)会把它挡在 UMH 门外,逼它退回到 W2 cred 路径**
+(那条路正是被厂商看门狗拦下的)。这是一个反向印证:UMH 才是能绕开看门狗的正道。
+
+### 10.3 真机实测(本机)
+
+| 次 | 配置 | 结果 |
+|---|---|---|
+| 1 | 原版(未改) | 走到 `fops redirect`(目标 `ffffff802a91a8e8` = 我们的 fops 目标,吻合),但 `pselect returned ... calls=1 success=0` ==> **写不落地**;退回 `W1: SELinux` 后设备重启 |
+| 2 | 换我们的时序(窗口 60s / 发数 16 / shift 0) | **更糟**:死在它自己的 `KernelSnitch` 堆喷(`prepare_kernel_page retry 7/24`,`mm_struct` 泄露 7 连败)==> 我们的时序打断了它那套堆布局节奏 |
+| 3 | 只改 `SLIDE_PSELECT_WORD_SHIFT 2 -> 0`(它自己表里给我们机型的值),其余全还原 | 见下节 |
+
+对比:**同一台设备上,我们的 SLIDE 配方把写打成了 11/12**(E5 命中),而它的 pselect 路由
+`success=0`。===> 差异在**堆喷/时序的实现细节**,不在计算出的偏移(偏移三家完全一致)。
+
+### 10.4 结论
+
+- **直接复用它的工具不可行**:它赖以启动的写原语在本机不落地(且它的预写堆喷很脆)。
+- **它的 UMH 段(通用、不碰 cred)才是真正有价值的部分** —— 理论上"我们的写原语 + 它的 UMH"
+  可拼装,但前提是我们的写能落地一个**指针写**到 `ASHMEM_MISC_FOPS`(本项目的 mt83 尝试全灭)。
+- 它也从未在本机验证过 —— 我们这次等于替上游做了那次 "pending device test",**结论是不通**。

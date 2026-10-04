@@ -237,7 +237,44 @@ pipe physrw  done=0 root=0 read_ok=0 write_ok=0
 本机 `CONFIG_RANDOMIZE_BASE=y`。但 R/E5/C 路径只使用 `P0_DATA_ALIAS_CONST`(直接映射物理别名)
 + 运行时泄露的 task 地址 ⇒ **理论上不依赖虚拟 slide**;待 (b) 打通后由写验证(boot_id)确认。
 
-### 6.4 下一步(按优先级)
+### 6.4 三条触发路径的实测(2026-10-04 晚)
+
+判据统一用 `boot_id` 零写回读(与 configfs 无关,与 perf 无关)。
+
+| # | 触发 | 结果 |
+|---|---|---|
+| ① | pselect fd_set 覆盖(FOPS 阶段) | ✅ 阻塞已修好(`ret=0`,5/5 轮 `calls=1 success=1`) ❌ `boot_id` 不落地 |
+| ② | v37 拓扑(`PSELECT_V37=1`,**主线程** stamp) | `FCRQ errno=35 EDEADLK`(环成形,与 matisse 现场一致)、`FLPI ret=0` ❌ 不落地 |
+| ③ | 同线程 stamp(`PSELECT_SLIDE_TRIGGER=1 PSELECT_STAMP=1`) | `FWRQ ETIMEDOUT` → `mt20 stamp` → `mt87b UNPOISON` → `mt19b sched 风暴` **全链执行** ❌ 仍不落地 |
+
+从 `slide_waiter_thread` 的源码读出**设计要点**:stamp 必须在**刚释放 waiter 的那个线程**里打
+(FWRQ 超时唤醒之后、UNPOISON 之前),因为"毒节点在本线程内核栈,悬垂 pi_blocked_on 在本线程
+task_struct"。②从主线程打 stamp 属结构性错误。
+
+③ 全链跑通却无写 ⇒ 剩余未知量 = **512B stamp 相对内核栈上 waiter 槽位的落点偏移**
+(`slide_stamp_fake_waiter()` 的 `buf[0]/[6]/[7]/[8]` 假定缓冲区起点 == waiter 起点)。需要加
+`PSELECT_STAMP_SHIFT` 旋钮在 512 字节内扫。
+
+另有一处**语义前提未满足**:`mt60: pre-requeue words f_wait=0` 而 `CMP_REQUEUE_PI` 传的 `cmpval=1`
+⇒ 内核侧 cmpval 检查不过 → requeue 不成立 ⇒ 整条链空转。(matisse 自己的注释也记了这个疑点:
+"内核侧要求 curval 必须等于 1 … 但源码中无人显式置 1"。)
+
+### 6.5 evidence/ 的旁证:matisse 的内核同样有 KASLR
+
+`evidence/panic_excerpt_*.txt` 里三个不同 boot 的 panic 头:
+
+```
+Kernel Offset: 0x1330600000 from 0xffffffc008000000
+Kernel Offset: 0x109fc00000 from 0xffffffc008000000
+Kernel Offset: 0x2c3be00000 from 0xffffffc008000000
+```
+
+⇒ `slide_leak_kernel_base()` 硬编码 `slide=0` 并不反映真实布局,但它仍取胜 —— 反向印证该路线
+**不依赖虚拟 slide**:R/E5/C 只用 `P0_DATA_ALIAS_CONST`(直接映射物理别名)+ 运行时泄露的 task 地址。
+对本机而言,唯一必须正确的绝对值是 `P0_KERNEL_PHYS_LOAD = 0xa8000000`,而它有两个独立来源
+(IDA/XBL 与 cheese exploit 的硬编码)。
+
+### 6.6 下一步(按优先级)
 
 1. 查明 `pselect` 立即返回的原因 → 让 `calls>0`(竞态窗口成立)。
 2. 用 `boot_id` 写验证(`PSELECT_CRED_BOOTID`)确认写原语,无需 task 地址。

@@ -891,3 +891,25 @@ PSS 前列: 微信 573+542MB, 支付宝 571MB, 抖音 450MB, 小红书 474MB
 **修正(已验证)**:mt93 的窗口上限(见 §12.6)让 miss 不再拖死设备 —— 单发 miss 后
 `uptime` 连续、`framework OK`。**要真正跑通,必须先腾出匿名内存**(`am force-stop` 常驻大应用),
 或改造喷洒规模(风险高:slab 几何必须精确,缩小会破坏 collision)。
+
+### 12.8 参数陷阱清单(全部实测踩过,成功配方 = caps4 原版)
+
+对比 `caps4.log`(成功)与后续失败批次,失败**全部由我自己改的参数造成**,不是设备或内核问题:
+
+| 参数 | 我做过的事 | 后果 | 正确做法 |
+|---|---|---|---|
+| `PSELECT_CONSUMER_CPU` | 设成 `6`(照抄代码注释"建议 CPU6")| **`mt77: pin CPU6 failed errno=22 (EINVAL)`**,路线直接中止 | **不要设**。Android cpuset 把 `shell` 域限制在部分核,`caps4` 成功那次**根本没有 mt77 行**(没做绑定)|
+| `PSELECT_WINDOW_SECONDS` | mt93 把默认上限压到 25s,后来又漏传 | `mt61: window=20s` ⇒ 路线在 7s 就被截断 ⇒ `wrote=0` | **显式给 60**(成功那次就是 60s;路线需要 ~44s 才走到写点)|
+| `PSELECT_ENTER_DELAY_USEC` | 默认 50ms | 成功那次 sched 阶段耗时 **43.7s**(PI 链堆积漫步),现在仅 7s ⇒ 写路径未被驱动 | 代码留有"对齐实验"值 **4000000**(4s)复现 R 时刻 |
+| 内存 | 未前置检查 | `prepare_kernel_page` 的 543-子进程喷洒 OOM ⇒ 重启 | 先 `am force-stop` 常驻应用,`MemFree >= 400~500MB` 再跑 |
+
+**两条"看起来吓人但不是病因"的噪音**(成功那次也照样出现,不要被误导):
+
+```
+[-] mt57: CANARY CORRUPTED gword=14 got=dca7ab1e5ca7ab1e want=5ca7ab1e5ca7ab1e
+[-] slide bad leaked pointer=<非内核地址>
+```
+它们在 `caps4`(拿到 root 那次)里**完全一样地出现**,所以是这版代码的正常噪声。
+
+**mt81 心跳**:200000 次迭代打印一次,8 秒能刷 8600 行(17 亿次迭代)。已降频到 2000000
+(`mt94`)。它说明 consumer 跑得飞快而不是被 I/O 卡住 —— `seq=0` 的真正含义是**上游没发布 `go`**。

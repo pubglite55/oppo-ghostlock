@@ -432,3 +432,77 @@ uptime 41→195,未重启)。
   (旧项目文档已记 DEAD)。改用 `boot_id` 判据后可完全绕开。
 - **perf 泄露**:SELinux 只放行 `exclude_kernel=1`(纯用户态采样),采内核寄存器被拒(§6.3a)。
 - **pselect fd_set 覆盖**:竞态可成立但打不出写(§6.4①)。
+
+---
+
+## 7. QEMU 实验台(2026-10-04 晚建立)
+
+目的:真机上打 C 阶段只会"黑屏、零日志"(§6.12/§6.13),所以把有风险的阶段挪到虚机里跑,
+好拿到完整 dmesg/panic。**建成并跑通,但结论是:对本漏洞价值有限。**
+
+### 7.1 环境(全部位于 `Desktop/oppo-2/qemu-lab/`)
+
+| 件 | 用途 |
+|---|---|
+| QEMU 11.1.0(官方 Windows 构建;`winget` 在非交互环境会 `stdin is not a tty` 失败,改用直连安装包) | 跑 arm64 客户机;**只有 `tcg`,无 WHPX/KVM** |
+| Debian `vmlinuz-5.10.0-30-arm64`(**5.10.218**,与目标 5.10.236 同代) | 客户机内核,`rt_mutex`/`futex` 行为一致 |
+| `linux-image-...-dbg` 的 `vmlinux`(326MB,带符号 + 292MB DWARF) | 反汇编定偏移 |
+| 自写静态 `init`(`init.c` → `init.bin`,NDK `--target=aarch64-linux-android35 -static`) | 不依赖 busybox/shell,内核直接 exec |
+| `extract_deb.py` / `mkinitramfs.py` | 本机无 `ar`/`cpio`,用纯 stdlib 解 `.deb` 与造 newc cpio |
+| `derive_qemu_target.py` | 从 `vmlinux` 反汇编出该内核的偏移 |
+
+启动:
+
+```bash
+qemu-system-aarch64.exe -machine virt -cpu cortex-a72 -smp 2 -m 1536 \
+  -kernel kx/boot/vmlinuz-5.10.0-30-arm64 -initrd initramfs.cpio.gz \
+  -append "console=ttyAMA0 earlycon=pl011,0x9000000 nokaslr" -nographic -no-reboot
+```
+
+### 7.2 实测结果
+
+**跑得起来的部分** ✔
+
+```
+slide-kaslr-mtk-hardcoded base=ffff800010000000 slide=0     ← guest 基址生效
+prepare_kernel_page ... found 3 collisisons                 ← 页喷射/KernelSnitch 机制全跑通
+mt19: SLIDE page prepared base=0xffffff9fad270000            ← 喷页就位
+```
+
+⇒ 证明**移植本体与触发机制在通用 5.10 内核上成立**,不依赖 OPPO vendor。
+
+**走不下去的部分** ✗
+
+```
+[-] mt28c: perf no kernel candidates
+[!] mt33: child-task-leak-failed task=0
+```
+
+`perf` 泄露依赖 **CPU 时序侧信道**,TCG 软件模拟下失真 ⇒ **结构上不可能复现**(非配置问题)。
+
+**"绕过泄露"同样不成立** ✗:本打算用 `init_task.tasks` 链表遍历替代,但遍历需要**读内核内存**,
+而 guest 里的 init 是**用户态**进程(碰不到内核地址),exploit 自己也没有读原语(那正是 C 阶段要换来的东西)
+⇒ **鸡生蛋在虚机里同样成立**。
+
+### 7.3 副产品(有价值,已固化)
+
+在 guest 里反汇编 `vmlinux` 得到的**权威**偏移(证明"偏移必须按内核重算,不能照搬"):
+
+| 项 | Debian 5.10.218 | OPPO 5.10.236 |
+|---|---|---|
+| `TASK_REAL_CRED_OFF` / `TASK_CRED_OFF` | **0x6c0 / 0x6c8** | 0x778 / 0x780 |
+| `TASK_TASKS_OFF` | **0x560** | 0x550 |
+| `sizeof(struct cred)` | 0xa8 | 0xa8 |
+| `core_sys_select` 帧 | 0x1a0 | 0x1c0 |
+| `_text` | 0xffff800010010000 | 0xffffff8000000000(基址) |
+
+`commit_creds` 的原始指令(双证):`ldr x20,[sp_el0+0x6c0]; ldr x1,[sp_el0+0x6c8]; cmp; b.ne -> BUG_ON`。
+
+### 7.4 结论
+
+QEMU(TCG)可用于:**验证移植能跑、拿完整日志、定结构偏移**;
+**不能**用于:**复现依赖 CPU 时序的泄露/竞态**(perf 泄露、futex 抢占时序)。
+要让它在 C 阶段上有用,必须给客户机硬件虚拟化(WHPX/KVM),而本机 QEMU 只编了 `tcg`,
+Windows 上 arm64 客户机也无可用加速 ⇒ 此路不通。
+
+⇒ **交付仍按真机已实证的部分收口:E5(宽容)7/7 稳定命中、零崩机。**

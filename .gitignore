@@ -30,3 +30,11 @@ Thumbs.db
 # Kernel extracted files
 vmlinux*
 boot*.img
+
+# IDA artifacts
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.i64

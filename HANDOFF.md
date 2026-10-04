@@ -44,6 +44,12 @@
 | sk_buff reclaim | ✅ Working | 4/4 send success |
 | PR #13 KASLR bypass | ✅ Working | 直接计算 kaslr_base |
 
+> [!WARNING]
+> **偏移验证修订 (2026-10-04)**: 下表 "已验证" 中的偏移验证结论仅部分成立。经
+> `output.elf` `.symtab` 复核(`analysis-scripts/audit_target_offsets.py`):数据符号全部正确;
+> 但 `ASHMEM_IOCTL / COMPAT_IOCTL / MMAP / OPEN / RELEASE / SHOW_FDINFO` 六个函数偏移原
+> **整体错位一个函数**,已修正。详见 `docs/offset-audit.md`。
+
 ### 已确认阻塞的功能
 
 | 模块 | 状态 | 阻塞原因 |

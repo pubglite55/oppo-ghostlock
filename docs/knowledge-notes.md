@@ -75,20 +75,41 @@ P0_DATA_ALIAS_CONST(addr) = P0_PAGE_OFFSET | ((addr) - KIMAGE_TEXT_BASE + P0_KER
 > [!NOTE]
 > 无 `wake_state` / `ww_ctx` 字段 (5.10.236 无此字段)。
 
-## file_operations 偏移 (IDA VERIFIED)
+## file_operations 偏移 (output.elf VERIFIED 2026-10-04)
+
+> [!WARNING]
+> 本 build 的 `struct file_operations` 与 mainline 5.10 **不同**:`unlocked_ioctl` 落在 `0x50`
+> (mainline 为 `0x48`),自该字段起整体 **+8**。下表为 `output.elf` 实测值,与
+> `exploit/targets/oppo-find_n2/target.h` 的 `FOPS_*_OFF` 一致。
+> (此前本节的 `0x48/0x50/0x58/0x68/0x78/0xd8` 是**错的**,已更正。详见 `docs/offset-audit.md`。)
 
 | 字段 | 偏移 | 说明 |
 |------|------|------|
+| owner | `0x00` | — |
 | llseek | `0x08` | — |
 | read | `0x10` | — |
 | write | `0x18` | — |
 | read_iter | `0x20` | — |
-| ioctl | `0x48` | 旧值 0x50 已修正 |
-| compat_ioctl | `0x50` | — |
-| mmap | `0x58` | — |
-| open | `0x68` | 旧值 0x70 已修正 |
-| release | `0x78` | 旧值 0x80 已修正 |
-| show_fdinfo | `0xd8` | — |
+| write_iter | `0x28` | — |
+| unlocked_ioctl | `0x50` | 旧值 0x48 已更正 |
+| compat_ioctl | `0x58` | 旧值 0x50 已更正 |
+| mmap | `0x60` | 旧值 0x58 已更正 |
+| open | `0x70` | 旧值 0x68 已更正 |
+| release | `0x80` | 旧值 0x78 已更正 |
+| show_fdinfo | `0xe0` | 旧值 0xd8 已更正 |
+
+### ashmem fops 表实测内容 (VA `0xffffffc00a2c0048`)
+
+| 槽位 | 符号 |
+|------|------|
+| +0x08 llseek | `ashmem_llseek` (`0x011ee5d4`) |
+| +0x20 read_iter | `ashmem_read_iter` (`0x011ee6ec`) |
+| +0x50 unlocked_ioctl | `ashmem_ioctl` (`0x011ee7d0`) |
+| +0x58 compat_ioctl | `compat_ashmem_ioctl` (`0x011ef2e0`) |
+| +0x60 mmap | `ashmem_mmap` (`0x011ef340`) |
+| +0x70 open | `ashmem_open` (`0x011ef580`) |
+| +0x80 release | `ashmem_release` (`0x011ef620`) |
+| +0xe0 show_fdinfo | `ashmem_show_fdinfo` (`0x011ef744`) |
 
 ## KernelSnitch 参数
 

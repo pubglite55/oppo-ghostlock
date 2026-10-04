@@ -2,6 +2,31 @@
 
 # 版本更新日志
 
+## [1.2-research] - 2026-10-04
+
+### 🔧 偏移审计与修复 (output.elf 实测)
+
+**修复**:
+- 修正 `target.h` 中 ashmem 函数偏移(原整体错位一个函数):
+  `ASHMEM_IOCTL/COMPAT_IOCTL/MMAP/OPEN/RELEASE/SHOW_FDINFO` → 正确符号地址
+- 补充 `ASHMEM_LLSEEK_OFF` / `ASHMEM_READ_ITER_OFF` 并导出对应宏
+- 更正 `docs/knowledge-notes.md` 的 `file_operations` 偏移表
+  (本 build `unlocked_ioctl` 在 0x50,自该字段起整体 +8)
+
+**新增**:
+- `analysis-scripts/audit_target_offsets.py` — 纯 stdlib(无需 pyelftools/IDA)的偏移审计脚本
+- `docs/offset-audit.md` — 完整审计报告(方法/证据/修正值)
+
+**死代码清理**(无调用者,已移出构建并加注记):
+- `slide.c` — pselect boot_id KASLR 泄漏,已被 PR #13 直接映射取代
+- `heap_spray.c` — 与 pipe physrw 循环依赖,无法自举
+- `fops.c::do_pselect_fake_lock_route()` — 无调用者
+
+**验证结果**: `audit_target_offsets.py` → **exact=22 / mismatch=0**。
+
+**修订说明**: 此前 "IDA Pro 全量偏移验证 (70+ 偏移)" 仅部分成立 — 数据符号全部正确,
+但 ashmem 函数指针 6 项系统性错位。详见 `docs/offset-audit.md`。
+
 ## [1.1-research] - 2026-08-02
 
 ### 🔬 Poll Stamping 分析 (MCAST_JOIN_SOURCE_GROUP)

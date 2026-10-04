@@ -5,6 +5,7 @@
 
 # Embedded binaries (generated, not committed)
 exploit/build/embed/
+exploit-v29/build/
 
 # Test program binaries
 exploit/test-programs/test_*

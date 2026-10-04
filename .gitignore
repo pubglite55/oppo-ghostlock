@@ -42,4 +42,5 @@ boot*.img
 
 # large local analysis artifacts (not part of the deliverable)
 output.elf
+*-boot.img
 *_boot.img

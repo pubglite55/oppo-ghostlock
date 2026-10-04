@@ -404,7 +404,28 @@ PSELECT_TRIGGER_SHOTS=16
 `PSELECT_HOLD`、喷页存活期),要么将交付定位为"移植完成 + 写原语实证"的
 研究成果,并明确标注其概率性。
 
-### 6.11 已放弃/已证伪的路径(避免重走)
+### 6.11 关键发现:写原语**不依赖 consumer 风暴**(2026-10-04 晚)
+
+复测成功那发的日志里:
+
+```
+[*] mt81: consumer seq=0 seen=0 stop=0 route_done=0 calls=0 tid=14536   ×16
+[*] mt60: waiter FWRQ ret=-1 errno=110 (ETIMEDOUT=110)
+[*] mt60: waiter UNLOCK_PI(chain) ret=0
+[*] mt57: canary planted gword=14 magic=5ca7ab1e5ca7ab1e
+```
+
+**`calls=0` = sched 风暴一次都没打,而写照样落地**(`04900d82-… → 849f698a-ffff-ffff-…`,
+uptime 41→195,未重启)。
+
+⇒ **真正的触发在自然 wake 路径**(`FWRQ ETIMEDOUT → UNLOCK_PI → canary planted`),
+不是 consumer 风暴。这解释了为何 `TRIGGER_SHOTS` 取 1/16/300 对结果几乎没有影响 ——
+那条路径根本没参与。
+
+**推论**:稳定性旋钮不在风暴时序上,而在**节点被 wake 路径使用时其字段的完整度**
+(候选:`PSELECT_HOLD`、`PSELECT_UNPOISON_DELAY_MS`、`PSELECT_STATIC_LOCK`)。
+
+### 6.12 已放弃/已证伪的路径(避免重走)
 
 - **KGSL/cheese**:231/231 全灭,GPU 侧机制不生效(§0)。
 - **configfs 验证**(`try_cfi_stage`):`direct write errno=22 EINVAL` —— 本机 ashmem 无 configfs 支持

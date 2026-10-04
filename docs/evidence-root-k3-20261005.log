@@ -343,3 +343,9 @@ sh: can't create /data/local/tmp/ksu_go.log: Permission denied
 [33m[*] [0mmt47: alive poll=2250 uid=0 CapEff=ffffff8a368280c0
 [33m[*] [0mmt47: alive poll=2300 uid=0 CapEff=ffffff8a368280c0
 [33m[*] [0mmt47: alive poll=2350 uid=0 CapEff=ffffff8a368280c0
+[33m[*] [0mmt47: alive poll=2400 uid=0 CapEff=ffffff8a368280c0
+[33m[*] [0mmt47: alive poll=2450 uid=0 CapEff=ffffff8a368280c0
+[33m[*] [0mmt47: alive poll=2500 uid=0 CapEff=ffffff8a368280c0
+[33m[*] [0mmt47: alive poll=2550 uid=0 CapEff=ffffff8a368280c0
+[33m[*] [0mmt47: alive poll=2600 uid=0 CapEff=ffffff8a368280c0
+[33m[*] [0mmt47: alive poll=2650 uid=0 CapEff=ffffff8a368280c0

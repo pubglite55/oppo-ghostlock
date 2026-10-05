@@ -140,6 +140,23 @@ if grep -vE '^[[:space:]]*(\*|/\*|//)' "$KSU/kernel/feature/selinux_hide.c" \
 fi
 echo "  stub in place, no SELinux-internal references in code"
 
+# ── ★ kernel/selinux/ 里还有两个文件在碰 SELinux 内部（第二次实测发现的）────────
+# 用【已带 selinux_hide 存根】的模块扫 .symtab（findsym2.py）：avc_has_perm 已清零、
+# 体积 6,430,784 → 5,953,296 B，但还剩 8 个：avc_ss_reset + avtab_*(5) + ebitmap_*(2)。
+# grep 追源：sepolicy.c 17 处、rules.c 4 处。两者都只服务"策略注入/隐藏痕迹"，
+# 与拿到 root 无关；而 selinux.c（实现 setup_selinux/setup_ksu_cred）是干净的、必须保留。
+echo "== replace kernel/selinux/{sepolicy.c,rules.c} with internals-free stubs =="
+for pair in "sepolicy_stub.c:sepolicy.c" "rules_stub.c:rules.c"; do
+  s="${pair%%:*}"; d="${pair##*:}"
+  cp -f "$STUBS/$s" "$KSU/kernel/selinux/$d"
+  echo "  $d <- $s"
+done
+if grep -vE '^[[:space:]]*(\*|/\*|//)' "$KSU/kernel/selinux/sepolicy.c" "$KSU/kernel/selinux/rules.c" \
+     | grep -qE 'avc_ss_reset|avtab_|ebitmap_'; then
+  echo "  !! stubs did not take (SELinux internals still referenced in CODE)"; exit 1
+fi
+echo "  selinux.c untouched (clean, needed for root); sepolicy.c/rules.c stubbed"
+
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on
 # the command line is enough for an external-module build, no Kconfig integration required.

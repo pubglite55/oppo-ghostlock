@@ -77,7 +77,7 @@
 4. 竞态条件下，waiter 的 `pi_blocked_on` 指针悬空
 
 **关键偏移**:
-- `task_struct->pi_blocked_on = 0x888`
+- `task_struct->pi_blocked_on = 0x898`（旧记 `0x888`，按 `exploit-v29/src/targets/oppo-find_n2/target.h` 的 `[ida][dis]` 实证更正：`#define TASK_PI_BLOCKED_ON_OFF 0x898`）
 - `rt_mutex_waiter->lock = 0x38`
 - `rt_mutex_waiter->task = 0x30`
 

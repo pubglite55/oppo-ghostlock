@@ -400,13 +400,6 @@ MCAST_JOIN_SOURCE_GROUP 在 OPPO Find N2 (kernel 5.10.236) 上存在**双重阻�
 
 **建议**: 改用能拷贝 272+ 字节的 syscall（如 `sendmsg` + `SCM_RIGHTS`），或接受 lock=0 的限制换用不依赖 rb_erase 的利用思路。
 
-[brszzz 的 OnePlus 13T 适配帖](https://brszzz.github.io/2026/07/12/CVE-2026-43499-GhostLock-6.6-adaptation/) 使用的方法：
-1. root kallsyms → A 类符号偏移
-2. BTF + bpftool → B 类结构体偏移
-3. config.gz + iomem → C 类布局常数
-4. IDA 读 flat Image → 解决 kallsyms 缺失的 static 变量
-5. 逐子技术对比 BTF → 验证伪造结构体布局兼容性
-
 ---
 
 ## 10. 代码修改记录

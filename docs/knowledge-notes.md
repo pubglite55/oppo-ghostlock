@@ -53,7 +53,7 @@ P0_DATA_ALIAS_CONST(addr) = P0_PAGE_OFFSET | ((addr) - KIMAGE_TEXT_BASE + P0_KER
 | pi_lock | `0x86c` | `ADD X21, X20, #0x86C` |
 | pi_waiters | `0x870` | 紧随 pi_lock |
 | pi_top_task | `0x880` | 紧随 pi_waiters |
-| pi_blocked_on | `0x888` | 紧随 pi_top_task |
+| pi_blocked_on | `0x898` | 紧随 pi_top_task（旧值 `0x888` 经 `TASK_PI_BLOCKED_ON_OFF` 的 `[ida][dis]` 实证更正） |
 
 > [!NOTE]
 > 52pojie 文章 (kernel 6.6) 值为 `0x90c/0x920/0x930/0x898`，在 5.10.236 上偏差约 `-0xa0~-0xb0` 字节。

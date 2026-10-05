@@ -18,6 +18,10 @@ on:
       - 'lkm-build/**'
       - '.github/workflows/build-lkm.yml'
 
+permissions:
+  contents: write          # commit the built .ko back into the repo (click-to-download)
+  actions: write           # artifact upload
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -59,12 +63,36 @@ jobs:
           CLANG: ${{ github.workspace }}/clang
           CONFIG: ${{ github.workspace }}/lkm-build/config-5.10.236
         run: |
+          set -o pipefail
           chmod +x lkm-build/build-lkm.sh
-          bash lkm-build/build-lkm.sh 2>&1 | tail -120
+          mkdir -p lkm-build/out
+          bash lkm-build/build-lkm.sh 2>&1 | tee lkm-build/out/build.log | tail -120
+
+      - name: Collect artefact (find it wherever the build put it)
+        run: |
+          set -x
+          find . -name 'kernelsu.ko' -not -path './kernel/*' -printf '%p %s bytes\n' || true
+          KO=$(find . -name 'kernelsu.ko' | head -1)
+          echo "KO=$KO"
+          test -n "$KO"
+          cp "$KO" lkm-build/out/kernelsu.ko
+          ls -l lkm-build/out/
+
+      - name: Commit the .ko back into the repository (click-to-download)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f lkm-build/out/kernelsu.ko lkm-build/out/build.log
+          git commit -m "ci: kernelsu.ko built against vendor 5.10.236 (run ${{ github.run_id }})" || echo "nothing to commit"
+          git push origin HEAD:test || echo "push failed (non-fatal: the artifact upload below still provides it)"
 
       - name: Upload kernelsu.ko
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kernelsu-ko
-          path: KernelSU/kernel/kernelsu.ko
-          if-no-files-found: error
+          path: |
+            lkm-build/out/kernelsu.ko
+            lkm-build/out/build.log
+          if-no-files-found: warn
+          retention-days: 14

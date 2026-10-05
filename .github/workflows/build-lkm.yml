@@ -38,6 +38,11 @@ jobs:
             https://github.com/oppo-source/android_kernel_oppo_sm8475 kernel
           head -6 kernel/Makefile
           grep -m1 'SUBLEVEL' kernel/Makefile
+          # OPPO keeps part of the vendor code outside the published tree: a few in-tree symlinks
+          # (mm/oplus_mm, net/oplus_modules) dangle.  kbuild walks those directories during
+          # modules_prepare, so materialise empty targets to keep the walk alive - none of them is
+          # needed to build the kernelsu module itself.
+          for l in $(find kernel -xtype l); do t=$(readlink -f "$l"); echo "materialising $t (for $l)"; mkdir -p "$t"; done
 
       - name: Fetch AOSP clang r416183b (the 5.10-CFI-era compiler, Linux native)
         run: |
@@ -69,16 +74,17 @@ jobs:
           bash lkm-build/build-lkm.sh 2>&1 | tee lkm-build/out/build.log | tail -120
 
       - name: Collect artefact (find it wherever the build put it)
+        if: always()
         run: |
           set -x
           find . -name 'kernelsu.ko' -not -path './kernel/*' -printf '%p %s bytes\n' || true
           KO=$(find . -name 'kernelsu.ko' | head -1)
           echo "KO=$KO"
-          test -n "$KO"
-          cp "$KO" lkm-build/out/kernelsu.ko
-          ls -l lkm-build/out/
+          if [ -n "$KO" ]; then cp "$KO" lkm-build/out/kernelsu.ko; fi
+          ls -l lkm-build/out/ || true
 
-      - name: Commit the .ko back into the repository (click-to-download)
+      - name: Commit the .ko (and the build log) back into the repository (click-to-download)
+        if: always()
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

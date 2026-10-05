@@ -2,9 +2,13 @@
 
 # 问题排查手册
 
+> 状态（2026-10-05 冻结）：零环境变量单条命令已复现真 root（uid=0）；下列条目为开发过程的历史排障记录，部分环境类结论（无 root / Enforcing）已被当前成果取代。
+
 ## 文档说明
 
 本文档收录 OPPO Find N2 GhostLock exploit 开发过程中遇到的所有问题及其解决方案。问题按类型分类，每条问题包含触发场景、报错信息、排查思路和解决方案。
+
+相关权威记录：最新冻结状态见 [`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)；写原语与已知边界见 [`exploit-v29/RESULT.md`](exploit-v29/RESULT.md)。
 
 ## 问题分类归档
 
@@ -258,6 +262,11 @@ setsockopt: Operation not permitted (errno=1)
 ---
 
 ### 环境搭建类
+
+> [!NOTE] 现状更新（2026-10-05）
+> 条目 9/10 的「无 root」「Enforcing」环境约束已被当前成果突破：零环境变量单条命令
+> `adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"` 已在真机复现 `uid=0(root)`，
+> 且 stage 1 已把 SELinux 置为 Permissive。下列两条保留为历史排查记录。
 
 #### 9. 设备无 root
 

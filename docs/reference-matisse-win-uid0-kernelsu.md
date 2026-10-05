@@ -1,5 +1,11 @@
 # 🏆 WIN — matisse (Redmi K50 Pro / MT6983 / kernel 5.10.209): uid 0 + kernel SID + KernelSU loaded
 
+> 状态（2026-10-05 冻结）：上游同源项目 Redmi K50 Pro/MT6983 的成功记录（uid=0 + KernelSU Live）；本机 OPPO Find N2 尚未达 KernelSU Live，此文件作对照参考。
+
+相关对照：本机当前冻结状态见
+[`../_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](../_docs/handoff/preload一键提权-mt99K-20261005-1600.md)
+与 [`../exploit-v29/RESULT.md`](../exploit-v29/RESULT.md)。
+
 **时间**：2026-10-03 16:20:20（CST）｜**轮次**：新弹药 `mt88` 的第 1 轮即达成
 **结论**：`uid=0(root) context=u:r:ksu:s0` + `/proc/modules` 出现 `kernelsu ... Live` ✓
 **关键**：设备**从未崩机、从未重启**（`boot=874cf104`，uptime 持续增长）✓

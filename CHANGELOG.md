@@ -2,6 +2,8 @@
 
 # 版本更新日志
 
+> 状态（2026-10-05 冻结）：历史更新日志逐条保留；最新冻结状态见文末追加的 [2.0-preload]。
+
 ## [1.2-research] - 2026-10-04
 
 ### 🔧 偏移审计与修复 (output.elf 实测)
@@ -107,6 +109,32 @@
 - 创建 docs/architecture.md
 - 创建 docs/setup.md
 - 创建 docs/knowledge-notes.md
+
+## [2.0-preload] - 2026-10-05
+
+> 冻结状态附录（旧条目逐条保留不动）。
+
+### ✨ 零环境变量单条命令真 root（已复现）
+
+- 一条命令即可拿到真 root，且提权体现在**调用者自己的进程**内：
+  `adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"` → `uid=0(root)`。
+- 产物 `preload.so` sha256 `b5128c725216aad1464bc5c54e39bb2d980c2b3a474adc17278a4f9100acdb54`（214,040 B）。
+- 链路：autopwn 编排器 → stage 1（SELinux→Permissive，`TREE_PC=ffffff802aa793c0 / TREE_RIGHT=SPRAY`）
+  → stage 2（CAPS-ONLY 写 `cred->cap_effective`）→ `setresgid/setresuid(0,0,0)` → hand-off `execve`
+  原始命令行 → 调用者打印 `uid=0` → worker `pause()` park。
+
+### ⚠️ 已知边界（冻结原因）
+
+- **KernelSU 未 Live**：`ksud late-load` 从已安装 manager APK 取模块（本机未装 ⇒ 静默 `rc=0`）；
+  `ksud insmod` 死于 `Cannot parse kallsyms`（需 `CAP_SYSLOG`）；唯一可行 `finit_module(ko_fd,"",3)`，
+  只差 `CAP_SYS_MODULE(bit16)`，而 bit16 无法确定性置位 ⇒ 剩余是抽奖。官方 KO
+  `lkm-aarch64-android12-5.10`（349,936 B）与本机同 KMI。
+- **健康代价**：约一半运行在写入落地后 framework 会塌；未命中的发也可能打死设备（prep 机器本身）。
+  **唯一有效软重启 = `adb shell 'svc power reboot'`**（其它全部无效），且必须用 `boot_id` 变化验证。
+
+### 📝 文档更新
+- 追加本条冻结状态附录；旧条目不作改动。
+- 权威记录：[`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)。
 
 ---
 

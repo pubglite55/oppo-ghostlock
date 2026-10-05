@@ -2,6 +2,8 @@
 
 # 开发最佳实践
 
+> 状态（2026-10-05 冻结）：通用开发规范与机制原理；其中「设备无 root」基线已被当前成果取代（零环境变量单条命令真 root，KernelSU 未 Live）。
+
 ## 代码规范
 
 ### 目录结构规范
@@ -121,4 +123,6 @@ P0_DATA_ALIAS_CONST(...) → 0xffffff802ab99b6d
 - kptr_restrict 启用 — /proc 信息泄露不可用
 
 > [!WARNING]
-> 设备无 root，所有操作必须在 shell 用户权限下进行。
+> 本节的「设备无 root / Enforcing / CapEff=0」是**设备的默认基线**（shell 域）。
+> 当前成果已突破该基线：stage 1 把 SELinux 置为 Permissive，零环境变量单条命令拿到真 root（uid=0）；
+> 但 KernelSU 仍未 Live，且设备健康仍为概率（约一半运行会塌）。

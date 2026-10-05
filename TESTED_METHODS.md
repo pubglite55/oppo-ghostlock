@@ -145,7 +145,7 @@
 
 ## 八、设备信息
 
-- **Phone**: OPPO Find N2, serial=84cb96e2
+- **Phone**: OPPO Find N2, serial=[redacted]
 - **Kernel**: 5.10.236-android12-9-o-g74d132f4467a
 - **Build**: OPPO/CPH2413/CPH2413:16/UP1A.231005.007/V16.0.12.0.UNFCNXM:user/release-keys
 - **CONFIG_FUTEX_PI=y** ✓

@@ -42,7 +42,7 @@
 ### 设备信息
 
 - 设备: OPPO Find N2 (SM8475/CPH2413)
-- Serial: `84cb96e2`
+- Serial: `[redacted]`
 - Kernel: `5.10.236-android12-9-o-g74d132f4467a`
 - Build: `OPPO/CPH2413/CPH2413:16/UP1A.231005.007/V16.0.12.0.UNFCNXM:user/release-keys`
 - 安全补丁: 2026-06-01

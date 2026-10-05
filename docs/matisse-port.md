@@ -170,7 +170,7 @@ adb push build/oppo-find_n2/bin/preload.so /data/local/tmp/
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null'
 ```
 
-## 6. 设备实测结果(2026-10-04,serial 84cb96e2)
+## 6. 设备实测结果(2026-10-04,serial [redacted])
 
 产物:`exploit-v29/build/oppo-find_n2/bin/preload.so`,193,240 B,
 sha256 `a0b591af7e86efb5e8f073daa9323f15c059d01f9156f96d5bcce5612bf6650e`
@@ -537,11 +537,11 @@ C 阶段 3/3 黑屏,且**与写是否命中无关**(写落空时 `uid` 全程 20
 ```bash
 # 1. 推二进制并核对 sha256(设备端必须等于本地)
 P="C:/Users/L1872/Desktop/oppo/exploit-v29/build/oppo-find_n2/bin/preload.so"
-adb -s 84cb96e2 push "$P" /data/local/tmp/preload29.so
-adb -s 84cb96e2 shell sha256sum /data/local/tmp/preload29.so
+adb -s [redacted] push "$P" /data/local/tmp/preload29.so
+adb -s [redacted] shell sha256sum /data/local/tmp/preload29.so
 
 # 2. 后台起采样器(200ms enforce + 10s 进程数),再跑 chain2
-adb -s 84cb96e2 shell 'cd /data/local/tmp && (setsid sh watch_enforce.sh &); (setsid sh chain2.sh e5 &)'
+adb -s [redacted] shell 'cd /data/local/tmp && (setsid sh watch_enforce.sh &); (setsid sh chain2.sh e5 &)'
 
 # 3. 判据:chain2.log 出现 A1 enforce=0 与 C verdict;同时看 enf.log 有无 enforce=0→1
 ```
@@ -588,9 +588,9 @@ $ ls /sys/fs/pstore/                                      -> 无转储
 ### 9.3 复现"看门狗"取证(设备可用时,1 分钟)
 
 ```bash
-adb -s 84cb96e2 shell 'getprop ro.boot.bootreason; getprop sys.boot.reason'
+adb -s [redacted] shell 'getprop ro.boot.bootreason; getprop sys.boot.reason'
 # 期望(在跑过 C 阶段之后):reboot,malicious_app_try_to_root_devices
-adb -s 84cb96e2 shell 'dmesg | grep -aiE "bug|panic|oops" | tail'   # 期望:空
+adb -s [redacted] shell 'dmesg | grep -aiE "bug|panic|oops" | tail'   # 期望:空
 ```
 
 ### 9.4 补充取证(2026-10-04 深夜):perf 泄露**不**触发看门狗

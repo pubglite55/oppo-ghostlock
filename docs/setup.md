@@ -54,7 +54,7 @@ $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang --v
 
 # 2. 连接设备
 adb devices
-# 应显示: 84cb96e2    device
+# 应显示: [redacted]    device
 
 # 3. 验证设备信息
 adb shell getprop ro.build.display.id

@@ -83,6 +83,26 @@ grep -n '^CONFIG_LOCALVERSION' .config | head -2
 
 make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
+# ── ★ 生成内核符号表 Module.symvers（否则 modpost 会跳过未解析符号检查）──────────
+# 症状链（实测）：没有 Module.symvers/vmlinux 符号 ⇒
+#   "WARNING: Symbol version dump "Module.symvers" is missing."
+#   "WARNING: modpost: Symbol info of vmlinux is missing. Unresolved symbol check will be entirely skipped."
+#   ⇒ 产出的 kernelsu.ko 带着内核里并不存在的符号引用
+#   ⇒ 设备上 finit_module(fd, flags=0) 返回 errno=2 ENOENT（simplify_symbols 找不到符号）
+# 所以这里先把内核本体编出来（vmlinux + modules 会经 modpost 产出 Module.symvers）。
+# CI 上这一步比较久（20-40 分钟）但在 6 小时限额内；失败也不致命，只是模块会继续 ENOENT。
+echo "== build the kernel body so Module.symvers exists (unresolved-symbol checking) =="
+if make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- vmlinux 2>&1 | tail -20; then
+  echo "vmlinux OK"
+else
+  echo "!! vmlinux build failed - continuing (module will still ENOENT on load)"
+fi
+if [ -f Module.symvers ]; then
+  echo "== Module.symvers present: $(wc -l < Module.symvers) exported symbols =="
+else
+  echo "!! Module.symvers still missing - modpost will not validate symbols"
+fi
+
 echo "== generate the SELinux generated headers (module-only builds skip them) =="
 # KernelSU's infra/file_wrapper.c includes security/selinux/include/objsec.h, which in turn
 # includes the GENERATED flask.h / av_permissions.h.  Those are made by

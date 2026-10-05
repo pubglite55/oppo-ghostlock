@@ -63,6 +63,24 @@ for try in $(seq 1 60); do
 done
 
 echo "== modules_prepare =="
+# ── ★ vermagic 必须与设备内核【逐字一致】，否则 flags=0 也过不去 ──────────────
+# 设备内核 UTS_RELEASE = 5.10.236-android12-9-o-g74d132f4467a（shipped build）。
+# 直接源码构建会得到 5.10.236-<githash>-dirty，只差这一段 ⇒ check_modinfo() 拒绝。
+# 而本内核没有 CONFIG_MODULE_FORCE_LOAD，所以 finit_module(flags=3/IGNORE_VERMAGIC)
+# 走 try_to_force_load() 会【恒定】返回 ENOEXEC —— flags=3 这条路在本机是死的。
+# 因此：把 LOCALVERSION 钉死 + 清掉 setlocalversion 的 git 尾巴，然后用 flags=0 装载。
+VO="${VERMAGIC_TARGET:-5.10.236-android12-9-o-g74d132f4467a}"
+if grep -q '^CONFIG_LOCALVERSION=' .config 2>/dev/null; then
+  sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"${VO#5.10.236}\"|" .config
+elif grep -q '^# CONFIG_LOCALVERSION is not set' .config 2>/dev/null; then
+  sed -i "s|^# CONFIG_LOCALVERSION is not set|CONFIG_LOCALVERSION=\"${VO#5.10.236}\"|" .config
+else
+  echo "CONFIG_LOCALVERSION=\"${VO#5.10.236}\"" >> .config
+fi
+rm -f .scmversion && touch .scmversion     # 让 scripts/setlocalversion 输出空 ⇒ UTS_RELEASE 不含 git hash
+echo "== vermagic 目标: ${VO} SMP preempt mod_unload modversions aarch64"
+grep -n '^CONFIG_LOCALVERSION' .config | head -2
+
 make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
 echo "== generate the SELinux generated headers (module-only builds skip them) =="

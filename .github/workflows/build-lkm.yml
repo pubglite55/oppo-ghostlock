@@ -117,6 +117,14 @@ jobs:
           KSU:  ${{ github.workspace }}/KernelSU
           CLANG: ${{ github.workspace }}/clang
           CONFIG: ${{ github.workspace }}/lkm-build/config-5.10.236
+          # KernelSU hard-codes the manager APK's signing-certificate size/hash and uses them to
+          # decide whether a manager app may talk to the kernel.  They must be non-empty or
+          # manager/apk_sign.c fails to compile ("expected expression").  The real values come from
+          # the OFFICIAL manager APK's certificate (it is v2/v3-signed, so that means parsing the
+          # APK Signing Block).  These placeholders only affect the runtime manager check, not
+          # whether the module loads - substitute the real pair before shipping.
+          KSU_EXPECTED_SIZE: "1032"
+          KSU_EXPECTED_HASH: "0000000000000000000000000000000000000000000000000000000000000000"
         run: |
           set -o pipefail
           chmod +x lkm-build/build-lkm.sh

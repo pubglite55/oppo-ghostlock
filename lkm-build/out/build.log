@@ -4,4 +4,121 @@ Target: x86_64-unknown-linux-gnu
 == configure the vendor tree with the device's exact config ==
 == olddefconfig (auto-stubbing unpublished vendor Kconfigs) ==
   stubbing unpublished Kconfig: kernel/oplus_cpu/sched/Kconfig
-lkm-build/build-lkm.sh: line 26: kernel/oplus_cpu/sched/Kconfig: No such file or directory
+    removing dangling link in path: kernel/oplus_cpu
+  stubbing unpublished Kconfig: kernel/sched/walt/tuning/Kconfig
+    removing dangling link in path: kernel/sched/walt/tuning
+  stubbing unpublished Kconfig: kernel/locking/oplus_locking/Kconfig
+    removing dangling link in path: kernel/locking/oplus_locking
+  stubbing unpublished Kconfig: mm/oplus_mm/Kconfig
+    removing dangling link in path: mm/oplus_mm
+  stubbing unpublished Kconfig: drivers/base/kernelFwUpdate/Kconfig
+    removing dangling link in path: drivers/base/kernelFwUpdate
+  stubbing unpublished Kconfig: drivers/input/touchscreen/oplus_touchscreen_v2/Kconfig
+    removing dangling link in path: drivers/input/touchscreen/oplus_touchscreen_v2
+  stubbing unpublished Kconfig: drivers/input/touchscreen/synaptics_hbp/Kconfig
+    removing dangling link in path: drivers/input/touchscreen/synaptics_hbp
+  stubbing unpublished Kconfig: drivers/input/oplus_fp_driver/Kconfig
+    removing dangling link in path: drivers/input/oplus_fp_driver
+  stubbing unpublished Kconfig: drivers/input/uff_fp_drivers/Kconfig
+    removing dangling link in path: drivers/input/uff_fp_drivers
+  stubbing unpublished Kconfig: drivers/power/oplus/Kconfig
+    removing dangling link in path: drivers/power/oplus
+  stubbing unpublished Kconfig: kernel/oplus_cpu/cpufreq_effiency/Kconfig
+  stubbing unpublished Kconfig: drivers/soc/oplus/multimedia/Kconfig
+    removing dangling link in path: drivers/soc/oplus/multimedia
+  stubbing unpublished Kconfig: drivers/soc/oplus/device_info/Kconfig
+    removing dangling link in path: drivers/soc/oplus/device_info
+  stubbing unpublished Kconfig: drivers/soc/oplus/sensor/Kconfig
+    removing dangling link in path: drivers/soc/oplus/sensor
+  stubbing unpublished Kconfig: drivers/soc/oplus/oplus_consumer_ir/Kconfig
+    removing dangling link in path: drivers/soc/oplus/oplus_consumer_ir
+  stubbing unpublished Kconfig: kernel/oplus_cpu/cpufreq_health/Kconfig
+  stubbing unpublished Kconfig: drivers/soc/oplus/dfr/Kconfig
+    removing dangling link in path: drivers/soc/oplus/dfr
+  stubbing unpublished Kconfig: drivers/soc/oplus/power/midas/Kconfig
+    removing dangling link in path: drivers/soc/oplus/power
+  stubbing unpublished Kconfig: drivers/soc/oplus/dft/Kconfig
+    removing dangling link in path: drivers/soc/oplus/dft
+  stubbing unpublished Kconfig: kernel/oplus_cpu/oplus_omrg/Kconfig
+  stubbing unpublished Kconfig: kernel/oplus_cpu/cpufreq_bouncing/Kconfig
+  stubbing unpublished Kconfig: drivers/soc/oplus/boot/Kconfig
+    removing dangling link in path: drivers/soc/oplus/boot
+  stubbing unpublished Kconfig: drivers/soc/oplus/mdmfeature/Kconfig
+    removing dangling link in path: drivers/soc/oplus/mdmfeature
+  stubbing unpublished Kconfig: kernel/oplus_cpu/oplus_overload/Kconfig
+  stubbing unpublished Kconfig: drivers/soc/oplus/mdmrst/Kconfig
+    removing dangling link in path: drivers/soc/oplus/mdmrst
+  stubbing unpublished Kconfig: kernel/oplus_cpu/uad/Kconfig
+  stubbing unpublished Kconfig: drivers/soc/oplus/power/subsys_sleep_monitor/Kconfig
+  stubbing unpublished Kconfig: drivers/soc/oplus/storage/Kconfig
+    removing dangling link in path: drivers/soc/oplus/storage
+  stubbing unpublished Kconfig: drivers/android/oplus_binder/Kconfig
+    removing dangling link in path: drivers/android/oplus_binder
+olddefconfig OK after 29 stub(s)
+== modules_prepare ==
+Makefile:548: MSM_ARCH: --
+  WRAP    arch/arm64/include/generated/uapi/asm/kvm_para.h
+  WRAP    arch/arm64/include/generated/uapi/asm/errno.h
+  WRAP    arch/arm64/include/generated/uapi/asm/ioctl.h
+  WRAP    arch/arm64/include/generated/uapi/asm/ioctls.h
+  WRAP    arch/arm64/include/generated/uapi/asm/ipcbuf.h
+  WRAP    arch/arm64/include/generated/uapi/asm/poll.h
+  WRAP    arch/arm64/include/generated/uapi/asm/msgbuf.h
+  WRAP    arch/arm64/include/generated/uapi/asm/resource.h
+  WRAP    arch/arm64/include/generated/uapi/asm/sembuf.h
+  WRAP    arch/arm64/include/generated/uapi/asm/shmbuf.h
+  WRAP    arch/arm64/include/generated/uapi/asm/siginfo.h
+  WRAP    arch/arm64/include/generated/uapi/asm/socket.h
+  WRAP    arch/arm64/include/generated/uapi/asm/sockios.h
+  WRAP    arch/arm64/include/generated/uapi/asm/stat.h
+  WRAP    arch/arm64/include/generated/uapi/asm/swab.h
+  WRAP    arch/arm64/include/generated/uapi/asm/termbits.h
+  WRAP    arch/arm64/include/generated/uapi/asm/termios.h
+  WRAP    arch/arm64/include/generated/uapi/asm/types.h
+  HOSTCC  scripts/dtc/dtc.o
+  HOSTCC  scripts/dtc/flattree.o
+  WRAP    arch/arm64/include/generated/asm/early_ioremap.h
+  WRAP    arch/arm64/include/generated/asm/mcs_spinlock.h
+  WRAP    arch/arm64/include/generated/asm/qrwlock.h
+  WRAP    arch/arm64/include/generated/asm/qspinlock.h
+  WRAP    arch/arm64/include/generated/asm/set_memory.h
+  WRAP    arch/arm64/include/generated/asm/user.h
+  WRAP    arch/arm64/include/generated/asm/bugs.h
+  WRAP    arch/arm64/include/generated/asm/delay.h
+  WRAP    arch/arm64/include/generated/asm/div64.h
+  WRAP    arch/arm64/include/generated/asm/dma-mapping.h
+  WRAP    arch/arm64/include/generated/asm/dma.h
+  WRAP    arch/arm64/include/generated/asm/emergency-restart.h
+  UPD     include/config/kernel.release
+  WRAP    arch/arm64/include/generated/asm/hw_irq.h
+  WRAP    arch/arm64/include/generated/asm/irq_regs.h
+  WRAP    arch/arm64/include/generated/asm/kdebug.h
+  WRAP    arch/arm64/include/generated/asm/kmap_types.h
+  HOSTCC  scripts/dtc/fstree.o
+  WRAP    arch/arm64/include/generated/asm/local.h
+  WRAP    arch/arm64/include/generated/asm/local64.h
+  WRAP    arch/arm64/include/generated/asm/mm-arch-hooks.h
+  WRAP    arch/arm64/include/generated/asm/mmiowb.h
+  WRAP    arch/arm64/include/generated/asm/msi.h
+  WRAP    arch/arm64/include/generated/asm/serial.h
+  WRAP    arch/arm64/include/generated/asm/switch_to.h
+  WRAP    arch/arm64/include/generated/asm/trace_clock.h
+  WRAP    arch/arm64/include/generated/asm/unaligned.h
+  WRAP    arch/arm64/include/generated/asm/vga.h
+  HOSTCC  scripts/dtc/data.o
+  HOSTCC  scripts/dtc/livetree.o
+  UPD     include/generated/uapi/linux/version.h
+  HOSTCC  scripts/dtc/treesource.o
+  GEN     include/generated/autoksyms.h
+ERROR: '/work/0008/workspace/Build_S_Vendor/60183/code/source/vnd/kernel_platform/out/msm-waipio-waipio-gki/gki_kernel/common/abi_symbollist.raw' whitelist file not found
+make: *** [Makefile:1438: include/generated/autoksyms.h] Error 1
+  HOSTCC  scripts/dtc/srcpos.o
+make: *** Waiting for unfinished jobs....
+  HOSTCC  scripts/dtc/checks.o
+  HOSTCC  scripts/dtc/util.o
+  LEX     scripts/dtc/dtc-lexer.lex.c
+  YACC    scripts/dtc/dtc-parser.tab.[ch]
+  HOSTCC  scripts/dtc/yamltree.o
+  HOSTCC  scripts/dtc/dtc-lexer.lex.o
+  HOSTCC  scripts/dtc/dtc-parser.tab.o
+  HOSTLD  scripts/dtc/dtc

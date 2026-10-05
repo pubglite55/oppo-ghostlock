@@ -64,15 +64,33 @@ jobs:
           for d in mods/*/ cmn/*/; do
             [ -d "$d" ] || continue
             b=$(basename "$d")
+            # 'kernel_platform' is the Qualcomm/OPPO umbrella layout: its children are the sibling
+            # repos (vendor/oplus/kernel/...).  The kernel tree's symlinks are written against that
+            # layout, so place the vendor tree where ../../../vendor/... resolves from kernel/<dir>.
+            if [ "$b" = "kernel_platform" ]; then
+              echo "placing $d as the kernel_platform umbrella"
+              mkdir -p kernel_platform
+              cp -an "$d." kernel_platform/ 2>/dev/null || true
+              [ -d kernel_platform/vendor ] && cp -an kernel_platform/vendor . 2>/dev/null || true
+              continue
+            fi
             if [ -e "kernel/$b" ]; then echo "merge $d -> kernel/$b"; cp -an "$d." "kernel/$b/" 2>/dev/null || true; fi
           done
           [ -d mods/vendor ] && cp -an mods/vendor . 2>/dev/null || true
           [ -d cmn/vendor ]  && cp -an cmn/vendor  . 2>/dev/null || true
           ls -d vendor 2>/dev/null || echo "(no vendor sibling yet)"
-          echo "--- still dangling symlinks in the kernel tree ---"
-          find kernel -xtype l | while read l; do echo "  $l -> $(readlink -f "$l")"; done | head -30
-          # materialise anything still dangling as an empty dir so kbuild can walk it
-          for l in $(find kernel -xtype l); do t=$(readlink -f "$l"); mkdir -p "$t"; done
+          echo "--- what the dangling links actually point at (raw readlink) ---"
+          find kernel -xtype l | head -25 | while read l; do echo "  $l -> $(readlink "$l")"; done
+          echo "--- still dangling after the merge ---"
+          find kernel -xtype l | wc -l
+          # kbuild must at least be able to walk each dangling path.  mkdir -p fails if the path is
+          # an existing SYMLINK (that is exactly what kernel/oplus_cpu turned out to be), so replace
+          # a dangling link with an empty directory instead of trying to mkdir through it.
+          while read l; do
+            t=$(readlink -f "$l")
+            if [ -n "$t" ] && [ ! -e "$t" ]; then mkdir -p "$t" 2>/dev/null || true; fi
+          done < <(find kernel -xtype l)
+          echo "--- dangling after materialisation ---"; find kernel -xtype l | wc -l
           # every line above lands in fetch.log, which the always() commit step pushes back to us
           } 2>&1 | tee lkm-build/out/fetch.log
 

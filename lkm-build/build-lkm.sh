@@ -32,7 +32,14 @@ for try in $(seq 1 60); do
     echo "!! olddefconfig failed for a non-Kconfig reason:"; tail -25 /tmp/od.log; exit 1
   fi
   echo "  stubbing unpublished Kconfig: $MISS"
-  mkdir -p "$(dirname "$MISS")"
+  if [ -e "$MISS" ] && [ ! -L "$MISS" ]; then
+    echo "    (already present as a real file - retrying olddefconfig without stubbing)"
+    continue
+  fi
+  # a DANGLING SYMLINK at this path (kernel/oplus_cpu was exactly that) makes 'mkdir -p' fail with
+  # "File exists" and, under set -e, killed the whole build.  Remove the link, then stub it.
+  [ -L "$MISS" ] && rm -f "$MISS"
+  mkdir -p "$(dirname "$MISS")" 2>/dev/null || true
   {
     echo "# [ci stub] this Kconfig is referenced by the published OPPO tree but not published."
     echo "# Stubbed so kbuild can configure; the options it would define are simply absent."

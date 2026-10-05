@@ -131,10 +131,14 @@ ls -l security/selinux/flask.h security/selinux/av_permissions.h
 # 所以换成只提供 ksu_selinux_hide_init/_exit 的存根不影响拿到 KernelSU root。
 echo "== replace feature/selinux_hide.c with the no-SELinux-internals stub =="
 cp -f "$STUBS/selinux_hide_stub.c" "$KSU/kernel/feature/selinux_hide.c"
-if grep -qE 'avc_has_perm|avtab_search_node|ebitmap_get_bit' "$KSU/kernel/feature/selinux_hide.c"; then
-  echo "  !! stub did not take (SELinux internals still referenced)"; exit 1
+# ★ 断言必须【跳过注释行】：存根文件头的说明里就写着那几个符号名，
+#   直接 grep 全文会把注释当代码 ⇒ 误判 "stub did not take" ⇒ 构建被自己判死
+#   （CI run 37385273046 就是这么挂的 ✓）
+if grep -vE '^[[:space:]]*(\*|/\*|//)' "$KSU/kernel/feature/selinux_hide.c" \
+     | grep -qE 'avc_has_perm|avc_ss_reset|avtab_|ebitmap_'; then
+  echo "  !! stub did not take (SELinux internals still referenced in CODE)"; exit 1
 fi
-echo "  stub in place, no SELinux-internal references"
+echo "  stub in place, no SELinux-internal references in code"
 
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on

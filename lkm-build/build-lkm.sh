@@ -36,10 +36,16 @@ for try in $(seq 1 60); do
     echo "    (already present as a real file - retrying olddefconfig without stubbing)"
     continue
   fi
-  # a DANGLING SYMLINK at this path (kernel/oplus_cpu was exactly that) makes 'mkdir -p' fail with
-  # "File exists" and, under set -e, killed the whole build.  Remove the link, then stub it.
+  # kernel/oplus_cpu is itself a DANGLING SYMLINK into an unpublished vendor path, so both
+  # 'mkdir -p kernel/oplus_cpu' ("File exists") and writing the stub through it ("No such file or
+  # directory") fail.  Walk the ancestor chain, drop any dangling link, then create real dirs.
+  d=$(dirname "$MISS")
+  while [ -n "$d" ] && [ "$d" != "." ] && [ "$d" != "/" ]; do
+    if [ -L "$d" ] && [ ! -e "$d" ]; then echo "    removing dangling link in path: $d"; rm -f "$d"; fi
+    d=$(dirname "$d")
+  done
   [ -L "$MISS" ] && rm -f "$MISS"
-  mkdir -p "$(dirname "$MISS")" 2>/dev/null || true
+  mkdir -p "$(dirname "$MISS")"
   {
     echo "# [ci stub] this Kconfig is referenced by the published OPPO tree but not published."
     echo "# Stubbed so kbuild can configure; the options it would define are simply absent."

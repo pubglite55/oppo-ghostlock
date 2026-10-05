@@ -65,6 +65,15 @@ done
 echo "== modules_prepare =="
 make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
+echo "== generate the SELinux generated headers (module-only builds skip them) =="
+# KernelSU's infra/file_wrapper.c includes security/selinux/include/objsec.h, which in turn
+# includes the GENERATED flask.h / av_permissions.h.  Those are produced by
+# scripts/selinux/genheaders during a full kernel build, which a module-only build never runs, so
+# 'flask.h' was reported missing.  Ask kbuild for them explicitly.
+make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- \
+     security/selinux/flask.h security/selinux/av_permissions.h
+ls -l security/selinux/flask.h security/selinux/av_permissions.h
+
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on
 # the command line is enough for an external-module build, no Kconfig integration required.

@@ -67,11 +67,13 @@ make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- 
 
 echo "== generate the SELinux generated headers (module-only builds skip them) =="
 # KernelSU's infra/file_wrapper.c includes security/selinux/include/objsec.h, which in turn
-# includes the GENERATED flask.h / av_permissions.h.  Those are produced by
-# scripts/selinux/genheaders during a full kernel build, which a module-only build never runs, so
-# 'flask.h' was reported missing.  Ask kbuild for them explicitly.
-make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- \
-     security/selinux/flask.h security/selinux/av_permissions.h
+# includes the GENERATED flask.h / av_permissions.h.  Those are made by
+# scripts/selinux/genheaders/genheaders, invoked by a rule inside security/selinux/Makefile - which
+# an external (M=) module build never descends into, so the header was never produced.  Naming the
+# target from the top level fails ("No rule to make target 'security/selinux/flask.h'") because the
+# rule lives in the subdirectory's Makefile: descend into the directory instead, and kbuild will
+# build the genheaders host tool and emit both headers.
+make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- security/selinux/
 ls -l security/selinux/flask.h security/selinux/av_permissions.h
 
 echo "== build kernelsu module (external module against the vendor tree) =="

@@ -114,6 +114,25 @@ echo "== generate the SELinux generated headers (module-only builds skip them) =
 make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- security/selinux/
 ls -l security/selinux/flask.h security/selinux/av_permissions.h
 
+# ── ★ 把 feature/selinux_hide.c 换成空实现存根（去掉未导出的 SELinux 内部符号）──────
+# 实测（/data/local/tmp/rw*.log，06:16）：
+#     mt99M: ko fd=8 rewound->0 size=6430784
+#     mt97: finit_module(fd=8 preopened, flags=0) ret=-1 errno=2 (ENOENT)
+# ENOENT 发生在 simplify_symbols()：vermagic（check_modinfo）与 forced-load 两道门都已经过了，
+# 纯粹是模块需要的某个符号内核没导出。对 kernelsu.ko 做 .symtab 扫描（oppo/findsym.py）：
+# 201 个未定义符号，而其中【全部】SELinux 内部符号都来自这一个文件：
+#     avc_has_perm · avc_ss_reset · avtab_alloc/destroy/insert_nonunique/search_node(_next)
+#     ebitmap_get_bit · ebitmap_set_bit
+# 厂商内核（5.10.236-android12-9-o-g74d132f4467a）没有 EXPORT_SYMBOL 这些。
+# 该文件只实现"隐藏痕迹"；root 本身、manager 授权、su 交接、mount namespace 都在别处，
+# 所以换成只提供 ksu_selinux_hide_init/_exit 的存根不影响拿到 KernelSU root。
+echo "== replace feature/selinux_hide.c with the no-SELinux-internals stub =="
+cp -f "$(dirname "$0")/stubs/selinux_hide_stub.c" "$KSU/kernel/feature/selinux_hide.c"
+if grep -qE 'avc_has_perm|avtab_search_node|ebitmap_get_bit' "$KSU/kernel/feature/selinux_hide.c"; then
+  echo "  !! stub did not take (SELinux internals still referenced)"; exit 1
+fi
+echo "  stub in place, no SELinux-internal references"
+
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on
 # the command line is enough for an external-module build, no Kconfig integration required.

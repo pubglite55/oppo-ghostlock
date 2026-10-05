@@ -1,5 +1,7 @@
 # oppo-ghostlock
 
+> 状态（2026-10-05 冻结）：零环境变量单条命令已拿到真 root（uid=0，已多次复现）；设备健康为抽签 —— 约一半运行在写入落地后 framework 会塌，未命中的发也可能致死；KernelSU 未 Live，路线已探明，剩余为一次抽奖。权威冻结记录见 [`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)。
+
 GhostLock CVE-2026-43499 — OPPO Find N2 Linux 内核提权研究
 
 [![Version](https://img.shields.io/badge/version-2.0--root%20achieved-success)](https://github.com/pubglite55/oppo-ghostlock)
@@ -10,7 +12,7 @@ GhostLock CVE-2026-43499 — OPPO Find N2 Linux 内核提权研究
 
 GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈 UAF 漏洞，通过 `FUTEX_CMP_REQUEUE_PI` 竞态条件触发。本项目将其适配到 **OPPO Find N2 (SM8475 / PGU110, ARM64, kernel 5.10.236)**。
 
-## ★ 当前状态:**已拿到真 root(3/3 复现,设备全程不卡死、不重启)**
+## ★ 当前状态:已拿到真 root(N2/P2/K3 3/3 复现,当轮设备未崩;mt99K 另复现 6 次,含零环境变量单条命令)。**注意:设备健康本身是抽签** —— 约一半运行在写入落地后 framework 会塌(`zyg 5→0`、`unknown SID` 失控),未命中的发也可能致死(prep 机器本身 543 fork + 64GB mmap)
 
 ```
 [+] mt47: ROOT-SEEN … CapEff=ffffff8a368280c0 poll=17     <- caps 写入落地
@@ -27,6 +29,8 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"
 # uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),… context=u:r:shell:s0
 ```
+
+产物 `preload.so` sha256 `b5128c725216aad1464bc5c54e39bb2d980c2b3a474adc17278a4f9100acdb54`(214,040 B,设备端 `/data/local/tmp/preloadP.so` 已核对一致);提权体现在**调用者自己的进程**里(root 子进程读 `/proc/self/cmdline` + `/proc/self/exe` 后 `execve` 原始命令行)。
 
 一次调用内完成 **stage 1(SELinux enforcing→0)** 与 **stage 2(caps 提权 + 交还原始命令行)**,不依赖任何环境变量。
 实测设备状态:同一 boot **`uptime` 连续**、`enforce=Permissive`、**`unknown SID=0`**、`workqueue lockup` 不累积、
@@ -57,8 +61,9 @@ adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"
    `-?????????`(损坏 inode,`stat/rm/push` 全 EACCES,永久钉死)。取证必须走
    **trace 直写调用者 stdout(adb socket)+ host 侧 `tee`**。
 
-> 下一步目标:**KernelSU Live** —— 把 `mt97 finit_module` / `mt96 ksud` 挪到 hand-off **之前**(在 root 子进程里执行),
-> 并解决 `CAP_SYS_MODULE(bit16)` 的确定性置位(当前写入值是指针,caps 位取决于地址位)。
+> KernelSU **未 Live**,但路线已探明(详见下 §未完成 与 [`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)):
+> 顺序已改为 **root → KernelSU → hand-off**(`mt96 ksud` / `mt97 finit_module` 的调用点已从 hand-off 之后移到之前 —— hand-off 的 `execve` 永不返回,之前的 KSU 代码是死代码);
+> 唯一可行路线 `finit_module(ko_fd,"",3)`,唯一门槛 `CAP_SYS_MODULE(bit16)` **无法确定性置位**(被写入的值必须同时是已映射内核 VA 供 `rb_erase` 解引用,且它本身就是 caps 的位图)⇒ 剩余是一次抽签。
 
 ### 关键机制:用 caps 写入绕开厂商反 root 守护
 
@@ -99,16 +104,25 @@ panic,这是本机早期反复黑屏的根因)。
 | `CANNOT LINK EXECUTABLE … not found` | 重启后 `/data/local/tmp` 被清 | 重推 + 校验 sha |
 | `window closed mid-burst` | 窗口太短 | 60s |
 
-## 未完成:KernelSU / 持久化
+## 未完成:KernelSU Live / 持久化
 
-Root 是**瞬时的**(持毒进程 park,不对外提供 su)。KernelSU 装载的三个已定位障碍:
+Root 是**瞬时的**(持毒 worker park,不对外提供 su;软重启即失)。KernelSU **未 Live**,但路线已探明 —— 三条路线全部实测判定
+(权威冻结记录:[`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)):
 
-1. **`ksud late-load` 以 uid=2000 运行会静默返回 rc=0 却不加载** ⇒ 必须由真 root 执行;
-2. **OPPO 守护主动拦截 KernelSU 管理器**:dmesg 实证 `libksud.so result execve_block`、
-   `curr_name@@kernelsu_zygote` ⇒ 装载前需用 root 临时停用该守护;
-3. exploit 的 root payload 里 `system("sh ksu_go.sh &")` **未真正执行**(需改为显式 `fork`+`execve`)。
+1. **`ksud late-load`:模块不在 ksud 里。** 设备上的 ksud = 官方 v3.3.0 standalone(6,286,568 B,与 release 资产同尺寸),
+   它从**已安装的 manager APK** 取内嵌模块;本机没装 `me.weishu.kernelsu` ⇒ 打印什么都没有、`rc=0`(不是被拦、不是崩溃)。
+2. **`ksud insmod /proc/self/fd/<ko_fd>`:模块读到了,但死在 kallsyms。** fd 路径有效(报错信息里打印出真实路径
+   `/data/local/tmp/KernelSU.ko`),失败于 `Cannot parse kallsyms / Operation not permitted (os error 1)`——
+   `/proc/kallsyms` 需要 `CAP_SYSLOG(bit34)`,本发 caps 没有。
+3. **`finit_module(ko_fd, "", 3)`:唯一可行路线。** flags 3 = IGNORE_MODVERSIONS|IGNORE_VERMAGIC,不需要 kallsyms、
+   不需要 manager APK,唯一门槛是 `CAP_SYS_MODULE(bit16)`。设备 KO 是官方 `lkm-aarch64-android12-5.10_kernelsu.ko`
+   (349,936 B,与 release 同尺寸)=**与本机内核同 KMI**,因此跳过 vermagic 是 ABI 安全的(不是猜的)。
 
+顺序已改为 **root → KernelSU → hand-off**(`main.c` 侧 ksud 用预开 fd + `execveat(fd,"",…,AT_EMPTY_PATH)` 拉起;`mt96 ksud` /
+`mt97 finit_module` 调用点已移到 hand-off **之前**)。**bit16 不能确定性置位**(实测 4 发 bit16=0、累计 1/5)⇒ 剩余是一次抽签。
 `exploit-v29/tools/ksu_go.sh` 已备好(复原自上游成功流程)。
+
+早期记录(保留):OPPO 守护对 KernelSU 管理器有拦截 —— dmesg 实证 `libksud.so result execve_block`、`curr_name@@kernelsu_zygote`。
 
 ## 技术栈
 

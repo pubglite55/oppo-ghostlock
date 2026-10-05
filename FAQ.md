@@ -2,6 +2,8 @@
 
 # 常见问题
 
+> 状态（2026-10-05 冻结）：零环境变量单条命令已拿到真 root（uid=0，已多次复现）；设备健康为抽签（约一半运行在写入落地后 framework 会塌）；KernelSU 未 Live，路线已探明。本文命令与失败原因仍有效；个别早期"不可行"结论已按 2026-10-05 实测修正（见文内）。权威记录见 `_docs/handoff/preload一键提权-mt99K-20261005-1600.md`。
+
 ## 使用类
 
 ### Q: 如何编译 exploit？
@@ -19,6 +21,15 @@ adb shell chmod 755 /data/local/tmp/preload.so
 ```
 
 ### Q: 如何运行 exploit？
+
+零环境变量单条命令即可拿到真 root（2026-10-05 冻结口径）：
+
+```bash
+adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"
+# -> uid=0(root) gid=0(root) groups=0(root),1004(input),… context=u:r:shell:s0
+```
+
+旧的显式环境变量工作流仍逐字节保留（命中任一 `PSELECT_*` 旧开关即走老路径）：
 
 ```bash
 adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
@@ -38,11 +49,13 @@ android35 会导致 shadow stack OOM。NDK r29 的 android35 对 shadow stack �
 
 使用 IDA Pro 打开 `boot_unpacked/output.elf`，通过 MCP 端口 13337 连接。所有偏移必须 IDA + pahole 双重验证。
 
-### Q: 为什么 pselect fd_set 栈覆盖不可行？
+### Q: pselect fd_set 栈覆盖可行吗？（早期判断：不可行）
 
-两个原因：
+早期判断（已被 2026-10-05 实测推翻）认为不可行，两个原因：
 1. NFDS > 336: fd_set 通过 `bitmap_alloc()` 分配在堆上
 2. NFDS ≤ 336: fd_set 在栈上，但 waiter 在 fd_set 下方 120 字节，无法覆盖
+
+**修正**：正确的 pselect 几何（E5/SLIDE）恰好覆盖 waiter（偏移 0），写原语已成立 —— 见 `docs/matisse-port.md` §6.7/§6.8。
 
 ### Q: 为什么 configfs R/W 不可行？
 
@@ -50,7 +63,7 @@ OPPO 内核的 ashmem 驱动没有 configfs 支持。`CONFIG_ASHMEM_CONFIGFS` �
 
 ### Q: 为什么 CVE-2026-23274 不可行？
 
-漏洞触发链每一步都需要 CAP_NET_RAW，而设备无 root + CONFIG_USER_NS=n，无法获取 capabilities。
+漏洞触发链每一步都需要 CAP_NET_RAW，而设备起始无 root + CONFIG_USER_NS=n，无法自行获取 capabilities（本项目最终改用 GhostLock 的 caps 路径取 root，该 CVE 仍未采用）。
 
 ### Q: KernelSnitch 的 MM_STRUCT_SZ 为什么是 0x3c0？
 
@@ -66,7 +79,7 @@ OPPO 内核的 ashmem 驱动没有 configfs 支持。`CONFIG_ASHMEM_CONFIGFS` �
 
 ### Q: 设备没有 root 能运行 exploit 吗？
 
-可以。本项目所有 exploit 都设计为在无 root 环境下工作。
+可以。本项目所有 exploit 都设计为在无 root 环境下工作（从 shell 域起步）；2026-10-05 起，零环境变量单条命令可直接拿到真 root。
 
 ### Q: 如何获取设备内核版本？
 

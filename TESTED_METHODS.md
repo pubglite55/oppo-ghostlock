@@ -1,5 +1,7 @@
 # GhostLock OPPO Find N2 — 所有测试方法汇总
 
+> 状态（2026-10-05 冻结）：逐方法失败记录仍有效；但"所有路径被阻止"的总结论已被实测推翻 —— GhostLock 路径最终在本机打通至真 root（写原语 = pselect fd_set 的 SLIDE/E5 几何，`TREE_PC=ffffff802aa793c0`、`TREE_RIGHT=SPRAY`；KernelSU 未 Live，仅差 bit16 抽签）。权威记录见 [`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)。
+
 **设备**: OPPO Find N2 (SM8475/CPH2413), kernel 5.10.236, Android 16  
 **漏洞**: CVE-2026-43499 (GhostLock rtmutex stack UAF)  
 **日期**: 2026-08-02  
@@ -80,7 +82,7 @@
 
 ---
 
-## 六、GhostLock 触发（成功但无法利用）
+## 六、GhostLock 触发（触发成功；"无法利用"的旧判断已被推翻 —— 2026-10-05 已在本链路拿到真 root）
 
 | # | 方法 | 状态 | 结果 |
 |---|------|------|------|
@@ -112,7 +114,7 @@
 
 ---
 
-## 七、根因总结
+## 七、根因总结（2026-10-05 复核）
 
 ### 核心阻塞：rb_erase 时序约束
 
@@ -121,25 +123,26 @@
    - spray 在 waiter 返回用户态后执行
    - 两者在同一内核栈上，但时序上无法重叠
 
-2. **pselect 在此内核上无法操纵 waiter 结构**（架构性原因）
+2. **pselect 在此内核上无法操纵 waiter 结构（早期判断，已被实测推翻）**
    - NFDS > 336：fd_set 通过 bitmap_alloc() 分配在堆上
    - NFDS ≤ 336：futex_wait_requeue_pi 和 pselect 是独立调用链，栈帧不重叠
    - 120 字节偏移差无法通过任何 NFDS 值克服
    - do_select 未内联（参考 kanxue 评论：Pixel 10 成功是因为 do_select 内联）
+   - **复核（2026-10-05）：以上"无法覆盖 / 120 字节偏移差"为早期测量结论；正确的 pselect 几何恰好覆盖 waiter（偏移 0），写原语最终成立（E5/SLIDE 几何，见 `docs/matisse-port.md` §6.7/§6.8）。**
 
-3. **configfs/ashmem 在此内核上不支持**
+3. **configfs/ashmem 在此内核上不支持**（仍成立）
    - ashmem SET_NAME 使用 strcpy 行为
    - 内核地址 LE 首字节为 NUL → 截断
    - pread 返回 EOF (errno=0)
 
-4. **所有其他内核写入路径都被阻塞**
+4. **所有其他内核写入路径都被阻塞**（仍成立；最终写原语走 pselect fd_set，不在本列表内）
    - /proc/self/mem: kptr_restrict
    - /dev/mem, /dev/ion: 不存在或无任意访问
    - binder: EACCES (shell user)
 
-### 结论
+### 结论（2026-10-05 更新）
 
-**OPPO 5.10.236 内核的安全加固 + rb_erase 时序约束阻止了所有已知的 GhostLock 利用路径。** 需要换一个不依赖 rb_erase 的写原语，或找到能在 hrtimer 回调之前覆盖 waiter 栈的方法。
+早期结论 **"OPPO 5.10.236 内核的安全加固 + rb_erase 时序约束阻止了所有已知的 GhostLock 利用路径"已被推翻** —— 2026-10-05 零环境变量单条命令已拿到真 root（caps 写 + setresuid 绕开厂商守护）。文中各单项失败记录仍有效；"需换一个不依赖 rb_erase 的写原语"的判断也作废（最终写原语 = pselect fd_set 的 SLIDE 几何）。KernelSU 未 Live（仅差 bit16 抽签）。
 
 ---
 

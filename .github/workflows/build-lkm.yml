@@ -34,19 +34,27 @@ jobs:
 
       - name: Fetch vendor kernel source + the two OPPO side repos
         run: |
+          mkdir -p lkm-build/out
+          {
           set -x
           # Tarball via codeload instead of 'git clone': one HTTP GET with retries is far more
-          # reliable than a 1.2 GB shallow clone on a flaky runner link.
-          CL="curl -fL --retry 8 --retry-delay 5 --retry-all-errors"
+          # reliable than a 1.2 GB shallow clone on a flaky runner link.  Each download is reported
+          # (http code + size) and tolerated, because the whole point of this step is to produce a
+          # log we can read when it fails - a hard failure here leaves no evidence at all.
           B=oppo/sm8475_b_16.0.0_find_n2
-          $CL -o kml.tgz   "https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/$B"
-          $CL -o mods.tgz  "https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/$B"
-          $CL -o cmn.tgz   "https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/$B" || true
+          try() {  # $1 = url, $2 = outfile
+            code=$(curl -fL --retry 8 --retry-delay 5 --retry-all-errors -w '%{http_code}' -o "$2" "$1" 2>&1 | tail -1) || true
+            echo "DOWNLOAD $2 http=$code size=$(stat -c%s "$2" 2>/dev/null || echo 0) url=$1"
+          }
+          try "https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/$B" kml.tgz
+          try "https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/$B" mods.tgz
+          try "https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/$B" cmn.tgz
+          ls -l *.tgz || true
           mkdir -p kernel && tar -xzf kml.tgz  -C kernel --strip-components=1
-          mkdir -p mods   && tar -xzf mods.tgz -C mods   --strip-components=1
-          [ -s cmn.tgz ] && { mkdir -p cmn && tar -xzf cmn.tgz -C cmn --strip-components=1; } || true
+          [ -s mods.tgz ] && { mkdir -p mods; tar -xzf mods.tgz -C mods --strip-components=1; }
+          [ -s cmn.tgz ]  && { mkdir -p cmn;  tar -xzf cmn.tgz  -C cmn  --strip-components=1; }
           grep -m1 'SUBLEVEL' kernel/Makefile
-          echo "--- modules repo top level ---"; ls mods | head -40
+          echo "--- modules repo top level ---"; ls mods 2>/dev/null | head -40; echo "--- common repo top level ---"; ls cmn 2>/dev/null | head -20
           # OPPO splits this device across three repos.  The kernel tree references the others:
           #   - in-tree symlinks like mm/oplus_mm -> ../../../vendor/oplus/kernel/mm
           #     (= a sibling 'vendor/' next to the kernel tree)
@@ -65,6 +73,8 @@ jobs:
           find kernel -xtype l | while read l; do echo "  $l -> $(readlink -f "$l")"; done | head -30
           # materialise anything still dangling as an empty dir so kbuild can walk it
           for l in $(find kernel -xtype l); do t=$(readlink -f "$l"); mkdir -p "$t"; done
+          # every line above lands in fetch.log, which the always() commit step pushes back to us
+          } 2>&1 | tee lkm-build/out/fetch.log
 
       - name: Fetch AOSP clang r416183b (the 5.10-CFI-era compiler, Linux native)
         run: |

@@ -26,7 +26,7 @@
  *
  * Removing the feature costs nothing that matters for obtaining KernelSU root:
  * root itself, the manager authorisation, the su hand-off and the mount namespace
- * handling all live elsewhere (kernel/core, kernel/sucompat, kernel/feature/*).
+ * handling all live elsewhere (kernel/core, kernel/sucompat, kernel/feature/).
  * Only trace-hiding is lost.
  *
  * Build wiring: lkm-build/build-lkm.sh copies this file over

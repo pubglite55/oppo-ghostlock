@@ -20,7 +20,19 @@
  */
 
 #include <linux/types.h>
+#include <linux/errno.h>
 
 void apply_kernelsu_rules(void)
 {
+}
+
+/*
+ * Declared in kernel/selinux/selinux.h.  The real implementation lives in
+ * rules.c and walks the running policy with the unexported avtab_/ebitmap_
+ * helpers.  It is the manager's sepolicy-injection ioctl entry point, so it
+ * must still EXIST for the rest of the tree to link - it just refuses work.
+ */
+int handle_sepolicy(void __user *user_data, u64 data_len)
+{
+	return -EOPNOTSUPP;
 }

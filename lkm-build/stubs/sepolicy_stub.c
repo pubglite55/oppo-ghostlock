@@ -130,3 +130,15 @@ bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path, co
 {
 	return false;
 }
+
+/*
+ * Non-static in sepolicy.c and reachable from outside it, so it must keep
+ * existing for the tree to link.  It is a plain kvmalloc/kvfree wrapper that
+ * touches no SELinux internals - returning NULL makes callers take their
+ * out-of-memory path, which is the honest answer when the policy rewriting
+ * this module would have done is disabled anyway.
+ */
+void *ksu_kvrealloc_compat(const void *p, size_t oldsize, size_t newsize, gfp_t flags)
+{
+	return NULL;
+}

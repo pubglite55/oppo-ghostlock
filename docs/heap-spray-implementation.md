@@ -1,4 +1,5 @@
 # Heap Spray Exploitation Chain Implementation
+> 状态（2026-10-05 冻结）：该实现路线未采用，保留备查——Step 6（触发 PI 读取）始终未完成，pipe physrw 自举失败后整条 chain 停用；最终写原语改用 pselect fd_set 的 SLIDE 几何。
 
 **Date**: 2026-07-14
 **Status**: Implementation complete, all steps implemented

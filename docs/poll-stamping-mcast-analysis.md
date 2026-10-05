@@ -1,6 +1,7 @@
 # Poll Stamping via MCAST_JOIN_SOURCE_GROUP — 完整分析报告
+> 状态（2026-10-05 冻结）：该路线已被证伪/未采用，保留备查——MCAST_JOIN_SOURCE_GROUP 的双重阻塞（264B 覆盖缺口 + lock 字段）使其无法作为写原语；最终写原语是 pselect fd_set 缓冲（setsockopt 缓冲 0x148 太深，无法触及 waiter，PSELECT_STAMP/STAMP_SHIFT 系无效）。
 
-**设备**: OPPO Find N2 (PGU110), kernel 5.10.236-android12-9-o-g74d132f4467a  
+**设备**: OPPO Find N2 (PGU110), kernel 5.10.236-android12-9-o-g74d132f4467a
 **漏洞**: CVE-2026-43499 (GhostLock rtmutex stack UAF)  
 **日期**: 2026-08-02  
 **状态**: ❌ MCAST_JOIN_SOURCE_GROUP 双重阻塞：① 4字节覆盖缺口 (264 vs 268) ② lock 字段残留为 NULL (rt_mutex_init_waiter 清零)  
@@ -408,9 +409,9 @@ MCAST_JOIN_SOURCE_GROUP 在 OPPO Find N2 (kernel 5.10.236) 上存在**双重阻�
 
 ---
 
-## 9. 代码修改记录
+## 10. 代码修改记录
 
-### 9.1 errno=35 修复
+### 10.1 errno=35 修复
 
 `owner_thread` 改为等待 `requeue_done` 信号后再阻塞：
 
@@ -423,7 +424,7 @@ while (!atomic_load(&requeue_done)) usleep(100);
 futex_op(&f_pi_chain, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
 ```
 
-### 9.2 Poll Stamping offset 更新
+### 10.2 Poll Stamping offset 更新
 
 ```c
 // 修复前: 32-bit 路径 offset
@@ -433,7 +434,7 @@ memcpy(buffer + 0x34, rb_payload, 0x50);
 memcpy(buffer + 0x108, rb_payload, 0x34);
 ```
 
-### 9.3 UNLOCK_PI 竞态
+### 10.3 UNLOCK_PI 竞态
 
 ```c
 // owner 在 requeue 后调用 UNLOCK_PI 唤醒 waiter
@@ -443,7 +444,7 @@ long ret = futex_op(&f_pi_target, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0);
 
 ---
 
-## 10. 关键文件
+## 11. 关键文件
 
 | 文件 | 说明 |
 |------|------|

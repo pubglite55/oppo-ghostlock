@@ -1,5 +1,7 @@
 # 偏移审计报告 (output.elf)
 
+> 状态（2026-10-05 冻结）：审计结论仍成立；§3 所述"潜伏 bug"随写原语打通（[`docs/matisse-port.md`](matisse-port.md) §6.8）已转为可用路径。
+
 **日期**: 2026-10-04
 **对象**: `exploit/targets/oppo-find_n2/target.h`
 **依据**: 工作区 `output.elf`(设备 boot image 经 vmlinux-to-elf 转换的产物)
@@ -60,8 +62,10 @@ python analysis-scripts/audit_target_offsets.py \
 另补两个此前缺失的符号:`ASHMEM_LLSEEK_OFF = 0x011ee5d4`、`ASHMEM_READ_ITER_OFF = 0x011ee6ec`。
 
 **影响**:`put_fake_fops_table()`(`util.c`)/`refresh_fake_fops_text()`(`fops.c`)会把这些值写入 fake
-`file_operations`。当前链路卡在更早的写原语,故此为**潜伏 bug**;一旦写原语打通,`open("/dev/ashmem")`
+`file_operations`。当时链路卡在更早的写原语,故此为**潜伏 bug**;一旦写原语打通,`open("/dev/ashmem")`
 会跳进 `ashmem_mmap`、ioctl 会跳进 `ashmem_read_iter`,直接错乱。**现已修正。**
+
+> 状态更新（2026-10-05）：写原语已于 [`docs/matisse-port.md`](matisse-port.md) §6.8 打通，上述潜伏 bug 已成为实际生效路径，故本次修正必要。
 
 ---
 
@@ -112,7 +116,8 @@ SLIDE_NFULNL_LOGGER_OFF 0x027c14b8 nfulnl_logger
 无对应 `.symtab` 符号(多为 `static`,需 IDA/反汇编才能确认):
 
 - `SELINUX_ENFORCING_OFF` (`selinux_enforcing` 非独立符号;本内核 `enforcing` 应为 `selinux_state` 的字段,
-  建议改为 `SELINUX_STATE + 字段偏移` 并在 IDA 确认)
+  建议改为 `SELINUX_STATE + 字段偏移` 并在 IDA 确认) —— 已确认:enforcing 在 `selinux_state + 0`
+  (`avc_denied`:`ldarb w12,[x0]; tbz w12,#0`),见 [`docs/matisse-port.md`](matisse-port.md) §3.3
 - `CONFIGFS_READ_ITER_OFF` / `CONFIGFS_BIN_WRITE_ITER_OFF` / `COPY_SPLICE_READ_OFF`(非导出符号)
 - `SLIDE_RANDOM_BOOT_ID_DATA_OFF`(`random_boot_id` static)
 
@@ -123,6 +128,7 @@ SLIDE_NFULNL_LOGGER_OFF 0x027c14b8 nfulnl_logger
 经调用图确认(仅 `common.h` 声明、活代码零调用):
 
 - `exploit/src/slide.c` — pselect boot_id KASLR 泄漏,已被 PR #13 直接映射取代 → 移出构建
+  （注:v29 路线重新启用 `slide.c` 的真 CVE 拓扑,见 [`docs/matisse-port.md`](matisse-port.md) §2）
 - `exploit/src/heap_spray.c` — 与 pipe physrw **循环依赖**,无法自举 → 移出构建
 - `exploit/src/fops.c::do_pselect_fake_lock_route()` — 无调用者(及其唯一被调 `prepare_pselect_fdsets`)
 

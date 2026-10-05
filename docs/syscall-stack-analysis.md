@@ -1,4 +1,5 @@
 # Syscall Stack Reachability Analysis for GhostLock Waiter Position
+> 状态（2026-10-05 冻结）：本文核心结论已部分被推翻——"无 syscall 能把用户数据写到 waiter 位置、pselect 为死路"的判断被后续 pselect fd_set 原语否定；fd_set 缓冲最终被证明是唯一能触及 waiter 的写原语（E5/SLIDE 几何）。逐 syscall 栈帧数据保留备查。
 
 **Date**: 2026-07-14
 **Goal**: Find a syscall that writes user-controlled data to the `rt_mutex_waiter` position on the kernel stack (stack_top - 0x270)

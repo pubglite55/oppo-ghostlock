@@ -1,6 +1,6 @@
-# docs/knowledge-notes.md
-
 # 技术知识沉淀
+
+> 状态（2026-10-05 冻结）：布局/结构/栈偏移数据仍为权威；`real_cred`/`cred` 偏移已按 `commit_creds` 反汇编更正为 `0x778`/`0x780`（见 [`docs/matisse-port.md`](matisse-port.md) §3.1）。
 
 ## OPPO Find N2 内核内存布局
 
@@ -40,8 +40,8 @@ P0_DATA_ALIAS_CONST(addr) = P0_PAGE_OFFSET | ((addr) - KIMAGE_TEXT_BASE + P0_KER
 | pid | `0x618` | 4 | 进程 ID |
 | tgid | `0x61c` | 4 | 线程组 ID |
 | real_parent | `0x628` | 8 | 父进程 |
-| real_cred | `0x818` | 8 | 真实 cred 指针 |
-| cred | `0x820` | 8 | 有效 cred 指针 |
+| real_cred | `0x778` | 8 | 真实 cred 指针（旧值 `0x818` 经 `commit_creds` 反汇编更正） |
+| cred | `0x780` | 8 | 有效 cred 指针（旧值 `0x820` 经 `commit_creds` 反汇编更正） |
 | comm | `0x830` | 16 | 进程名 |
 | tasks | `0x550` | 16 | 任务链表 |
 | seccomp | `0x8e8` | — | seccomp 状态 |

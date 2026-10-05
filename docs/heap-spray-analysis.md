@@ -1,4 +1,5 @@
 # Heap Spray Approach Analysis
+> 状态（2026-10-05 冻结）：该路线未采用，保留备查——pipe physrw/configfs 依赖链无法自举（`heap_spray.c` 已作死代码移出构建）；最终写原语为 pselect fd_set 的 SLIDE 几何（E5/CRED，TREE_PC=ffffff802aa793c0、TREE_RIGHT=SPRAY）。本文的偏移、命令与推理仍有效。
 
 **Date**: 2026-07-14
 **Goal**: Use heap spray instead of stack spray to exploit GhostLock

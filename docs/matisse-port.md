@@ -1,5 +1,9 @@
 # matisse 路线移植记录 (exploit-v29)
 
+> 状态（2026-10-05 冻结）：移植链已在本机打通至真 root（caps + setresuid 绕开厂商守护，§12/§13），KernelSU 未 Live 仅差 bit16 抽签；§4/§8/§9 的"待标定/不可交付"结论已被后续实测取代，本节以下过程记录原样保留。
+>
+> 最新权威记录：[`../_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](../_docs/handoff/preload一键提权-mt99K-20261005-1600.md)
+
 > 2026-10-04 · 从 `ihamn/matisse-public`(GPL-3.0)移植到 OPPO Find N2 / PGU110 / SM8475 / kernel 5.10.236
 
 ## 0. 为什么换路线:KGSL/cheese 已证伪
@@ -139,6 +143,8 @@ ashmem{llseek,read_iter,ioctl,compat_ioctl,mmap,open,release,show_fdinfo}
 ```
 
 ## 4. 仍需上机标定(唯一真正的未知)
+
+> 状态更新（2026-10-05）：本节所列标定项均已在 §6.8–§13 实测解决或取代；保留为移植当时的未知清单。
 
 - `PSELECT_ROUTE_NFDS` + word `shift`(fd_set ↔ rt_mutex_waiter 的栈对齐)。
   matisse = 320/0(且 `PSELECT_SHIFT` 只有 0 被内核读到过);本机待扫。
@@ -358,6 +364,8 @@ PSELECT_TRIGGER_SHOTS=16
 
 ### 6.9 下一步(按优先级)
 
+> 状态更新（2026-10-05）：下列步骤 1–4 均已在 §12/§13 完成（真 root 已成、3/3 复现）；§9 的"不可交付"结论被 §12 推翻。
+
 > 写原语已于 §6.8 打通。剩下只有"取自身 task 地址"这一环。
 
 1. 用**已成立的写原语**读 task:实现基于 `init_task.tasks` 链表的遍历(框架自带
@@ -511,6 +519,8 @@ Windows 上 arm64 客户机也无可用加速 ⇒ 此路不通。
 
 ## 8. 未决项:第二阶段(C 阶段 → 真 root)的未来实验设计
 
+> 状态更新（2026-10-05）：本节"第二阶段不可交付"的推断已被 §12（caps + setresuid 绕开守护）推翻；§8.1 的黑屏成因分析保留为过程记录。
+
 **结论先行**:C 阶段在关键路径上,绕不开。
 
 - 框架里"以 root 启动 `ksud` 官方装载器"那条路(`ksu_go.sh`:SELinux 策略第 23 字节 `|0xC0`
@@ -552,6 +562,8 @@ adb -s [redacted] shell 'cd /data/local/tmp && (setsid sh watch_enforce.sh &); (
 ---
 
 ## 9. ★决定性发现:C 阶段"黑屏/重启"的真因是**厂商反 root 看门狗**(2026-10-04)
+
+> 状态更新（2026-10-05）：看门狗的存在与取证仍成立；但本节"第二阶段结构上不可交付"的结论已被 §12 推翻——caps + setresuid 绕开守护拿到了真 root。
 
 E5 第 8 次命中(36 秒)之后跑 C 阶段,设备再次重启。**重启后取证**:
 

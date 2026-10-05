@@ -1,5 +1,7 @@
 # GhostLock 适配指南
 
+> 状态（2026-10-05 冻结）：通用适配方法论仍成立；文中"OPPO Find N2 fd_set 无法触及 waiter"的历史判断已被实测推翻——正确的 pselect 几何恰好覆盖 waiter（偏移 0），写原语已成立（[`docs/matisse-port.md`](matisse-port.md) §6.7/§6.8）。
+
 ## 核心原则
 
 **简单适配偏移是不可能成功的。** 不同内核的栈布局、结构体偏移、系统调用行为都可能不同。
@@ -14,7 +16,9 @@
 
 **Pixel 10 成功原因**: pselect 的 `stack_fds` 正好和 `rt_waiter` 在内核栈上重合。
 
-**OPPO Find N2 失败原因**:
+**OPPO Find N2 失败原因**（历史判断，已被下注推翻）:
+
+> 注（2026-10-05）：此处"fd_set 无法触及 waiter"的结论已被实测推翻。正确的 pselect 几何（`core_sys_select [sp+0x50]`，256 B）恰好覆盖 waiter 起点（偏移 0）；此前失败的真实原因是**跑错了线程**（毒节点不在该栈上），而非栈布局不兼容。详见 [`docs/matisse-port.md`](matisse-port.md) §6.7/§6.8。以下原数值保留为早期推算记录。
 
 ```
 waiter 位置: stack_top - 0x358 (856B)

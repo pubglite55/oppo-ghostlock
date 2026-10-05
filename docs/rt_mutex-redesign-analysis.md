@@ -1,4 +1,5 @@
 # Route 3: Redesign GhostLock Trigger Analysis
+> 状态（2026-10-05 冻结）：该路线未采用，保留备查——结论（waiter 恒在帧底、用户数据恒在帧顶，更深帧只会让间隙更大，属结构性问题）仍成立；最终未改用其他 rt_mutex 触发，而是用 pselect fd_set 直接触及 waiter。
 
 **Date**: 2026-07-14
 **Goal**: Find alternative rt_mutex operations that might be easier to exploit

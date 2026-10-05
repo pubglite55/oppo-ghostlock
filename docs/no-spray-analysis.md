@@ -1,4 +1,5 @@
 # Route 2: No-Spray Approach Analysis
+> 状态（2026-10-05 冻结）：该路线未采用，保留备查——"无喷不可行"的结论仍成立；最终采用的是 pselect fd_set 将用户数据写入内核栈 waiter（spray），而非依赖 waiter 位置的残留数据。
 
 **Date**: 2026-07-14
 **Goal**: Exploit GhostLock without stack spray by using residual data at the waiter position

@@ -1,6 +1,7 @@
 # MCAST_JOIN_SOURCE_GROUP Poll Stamping — 绕过方案
+> 状态（2026-10-05 冻结）：该绕过方案未采用，保留备查——核心阻塞是 rb_erase 时序（在 waiter 返回用户态前执行，spray 永远太晚）；最终写原语改为 pselect fd_set 的 SLIDE 几何。
 
-**设备**: OPPO Find N2 (PGU110), kernel 5.10.236  
+**设备**: OPPO Find N2 (PGU110), kernel 5.10.236
 **漏洞**: CVE-2026-43499 (GhostLock rtmutex stack UAF)  
 **日期**: 2026-08-02
 

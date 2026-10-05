@@ -1,6 +1,6 @@
-# docs/architecture.md
-
 # 架构设计文档
+
+> 状态（2026-10-05 冻结）：本文是早期 GhostLock（浏览器 CVE-2026-10702）设计蓝图，已被 matisse 路线取代；实际交付链路见 [`docs/matisse-port.md`](matisse-port.md) §12/§13 与 [`../_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](../_docs/handoff/preload一键提权-mt99K-20261005-1600.md)。
 
 ## 设计理念
 
@@ -85,7 +85,7 @@
 
 **功能定位**: 通过 pipe buffer 操作实现任意物理内存读写。
 
-> [!NOTE] 待补充：pipe physrw 当前被 ashmem 无 configfs 支持阻塞
+> [!NOTE] 状态更新（2026-10-05）：configfs 路径在本机无支持（已证 DEAD）；写原语改由 pselect 栈覆盖提供，判据用 `boot_id` 零写回读，详见 [`docs/matisse-port.md`](matisse-port.md) §6.8。原文"待补充"保留为设计期状态。
 
 ### pselect fd_set 栈覆盖
 
@@ -120,11 +120,11 @@
    └── socketpair send → sk_buff 堆喷射
        └── 回收 freed 内存
 
-6. pipe physrw (当前阻塞)
+6. pipe physrw (设计期路径；configfs 在本机无支持，已由 pselect 写原语取代)
    └── configfs R/W → pipe buffer 修改
        └── 物理内存任意读写
 
-7. root escalation (当前阻塞)
+7. root escalation (已达成：caps + setresuid 绕开守护，见 docs/matisse-port.md §12/§13)
    └── init_task.tasks walk → cred patch
        └── uid=0, caps=FULL, SID=1
 ```

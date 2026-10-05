@@ -1,5 +1,7 @@
 # PR #13 分析报告
 
+> 状态（2026-10-05 冻结）："pselect 栈覆盖不可行"的结论已被实测推翻——正确的 pselect 几何恰好覆盖 waiter（偏移 0），写原语已成立（[`docs/matisse-port.md`](matisse-port.md) §6.7/§6.8）；PR #13"跳过 KASLR leak"的判断仍成立。
+
 ## 概述
 
 PR #13 "bypass slide" 由 Dere3046 (bfc6e) 提交，旨在绕过 slide pselect 机制。该 PR 移除了 slide leak 代码，直接使用 `P0_PAGE_OFFSET + P0_KERNEL_PHYS_LOAD` 作为 kernel base。
@@ -140,6 +142,8 @@ ex3=0000000000000000
 
 ## 核心问题
 
+> 状态更新（2026-10-05）：本节的"不可行"结论已被推翻——pselect 栈覆盖在 SLIDE 路径下由 waiter 线程自身调用时成立（偏移 0），写原语已打通（[`docs/matisse-port.md`](matisse-port.md) §6.7/§6.8）。
+
 ### slide pselect 栈覆盖仍然不可行
 
 即使 kernel base 正确（PR #13 跳过了 slide leak），**pselect 栈覆盖本身仍然不可行**：
@@ -177,6 +181,8 @@ e316565 fix: add SLIDE_ defines and PSELECT_WAITER_WORD_SHIFT for PR #13 compila
 ---
 
 ## 下一步
+
+> 状态更新（2026-10-05）：两项均已解决——slide pselect 经静态栈推导证实几何正确（偏移 0），改由 waiter 线程自身调用后写原语打通；无需改用 sendmsg。见 [`docs/matisse-port.md`](matisse-port.md) §6.7/§6.8。
 
 1. **修复 slide pselect** — 需要重新设计机制，找到其他方法将用户可控数据放置到 waiter 位置
 2. 或 **放弃 slide pselect**，寻找其他栈覆盖方法（如 sendmsg）

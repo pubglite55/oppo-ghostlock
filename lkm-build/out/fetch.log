@@ -21,9 +21,9 @@ DOWNLOAD mods.tgz http=200 size=43114899 url=https://codeload.github.com/oppo-so
 + echo 'DOWNLOAD cmn.tgz http=200 size=188579793 url=https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2'
 DOWNLOAD cmn.tgz http=200 size=188579793 url=https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
 + ls -l cmn.tgz kml.tgz mods.tgz
--rw-r--r-- 1 runner runner 188579793 Oct  5 14:05 cmn.tgz
--rw-r--r-- 1 runner runner 192054564 Oct  5 14:04 kml.tgz
--rw-r--r-- 1 runner runner  43114899 Oct  5 14:04 mods.tgz
+-rw-r--r-- 1 runner runner 188579793 Oct  5 14:10 cmn.tgz
+-rw-r--r-- 1 runner runner 192054564 Oct  5 14:09 kml.tgz
+-rw-r--r-- 1 runner runner  43114899 Oct  5 14:09 mods.tgz
 + mkdir -p kernel
 + tar -xzf kml.tgz -C kernel --strip-components=1
 + '[' -s mods.tgz ']'
@@ -68,16 +68,25 @@ build.config.amlogic
 + '[' -d mods/kernel_platform/ ']'
 ++ basename mods/kernel_platform/
 + b=kernel_platform
-+ '[' -e kernel/kernel_platform ']'
++ '[' kernel_platform = kernel_platform ']'
++ echo 'placing mods/kernel_platform/ as the kernel_platform umbrella'
+placing mods/kernel_platform/ as the kernel_platform umbrella
++ mkdir -p kernel_platform
++ cp -an mods/kernel_platform/. kernel_platform/
++ '[' -d kernel_platform/vendor ']'
++ true
++ continue
 + for d in mods/*/ cmn/*/
 + '[' -d mods/vendor/ ']'
 ++ basename mods/vendor/
 + b=vendor
++ '[' vendor = kernel_platform ']'
 + '[' -e kernel/vendor ']'
 + for d in mods/*/ cmn/*/
 + '[' -d cmn/Documentation/ ']'
 ++ basename cmn/Documentation/
 + b=Documentation
++ '[' Documentation = kernel_platform ']'
 + '[' -e kernel/Documentation ']'
 + echo 'merge cmn/Documentation/ -> kernel/Documentation'
 merge cmn/Documentation/ -> kernel/Documentation
@@ -86,6 +95,7 @@ merge cmn/Documentation/ -> kernel/Documentation
 + '[' -d cmn/LICENSES/ ']'
 ++ basename cmn/LICENSES/
 + b=LICENSES
++ '[' LICENSES = kernel_platform ']'
 + '[' -e kernel/LICENSES ']'
 + echo 'merge cmn/LICENSES/ -> kernel/LICENSES'
 merge cmn/LICENSES/ -> kernel/LICENSES
@@ -94,6 +104,7 @@ merge cmn/LICENSES/ -> kernel/LICENSES
 + '[' -d cmn/android/ ']'
 ++ basename cmn/android/
 + b=android
++ '[' android = kernel_platform ']'
 + '[' -e kernel/android ']'
 + echo 'merge cmn/android/ -> kernel/android'
 merge cmn/android/ -> kernel/android
@@ -102,6 +113,7 @@ merge cmn/android/ -> kernel/android
 + '[' -d cmn/arch/ ']'
 ++ basename cmn/arch/
 + b=arch
++ '[' arch = kernel_platform ']'
 + '[' -e kernel/arch ']'
 + echo 'merge cmn/arch/ -> kernel/arch'
 merge cmn/arch/ -> kernel/arch
@@ -110,6 +122,7 @@ merge cmn/arch/ -> kernel/arch
 + '[' -d cmn/block/ ']'
 ++ basename cmn/block/
 + b=block
++ '[' block = kernel_platform ']'
 + '[' -e kernel/block ']'
 + echo 'merge cmn/block/ -> kernel/block'
 merge cmn/block/ -> kernel/block
@@ -118,6 +131,7 @@ merge cmn/block/ -> kernel/block
 + '[' -d cmn/certs/ ']'
 ++ basename cmn/certs/
 + b=certs
++ '[' certs = kernel_platform ']'
 + '[' -e kernel/certs ']'
 + echo 'merge cmn/certs/ -> kernel/certs'
 merge cmn/certs/ -> kernel/certs
@@ -126,6 +140,7 @@ merge cmn/certs/ -> kernel/certs
 + '[' -d cmn/crypto/ ']'
 ++ basename cmn/crypto/
 + b=crypto
++ '[' crypto = kernel_platform ']'
 + '[' -e kernel/crypto ']'
 + echo 'merge cmn/crypto/ -> kernel/crypto'
 merge cmn/crypto/ -> kernel/crypto
@@ -134,6 +149,7 @@ merge cmn/crypto/ -> kernel/crypto
 + '[' -d cmn/drivers/ ']'
 ++ basename cmn/drivers/
 + b=drivers
++ '[' drivers = kernel_platform ']'
 + '[' -e kernel/drivers ']'
 + echo 'merge cmn/drivers/ -> kernel/drivers'
 merge cmn/drivers/ -> kernel/drivers
@@ -142,6 +158,7 @@ merge cmn/drivers/ -> kernel/drivers
 + '[' -d cmn/fs/ ']'
 ++ basename cmn/fs/
 + b=fs
++ '[' fs = kernel_platform ']'
 + '[' -e kernel/fs ']'
 + echo 'merge cmn/fs/ -> kernel/fs'
 merge cmn/fs/ -> kernel/fs
@@ -150,6 +167,7 @@ merge cmn/fs/ -> kernel/fs
 + '[' -d cmn/include/ ']'
 ++ basename cmn/include/
 + b=include
++ '[' include = kernel_platform ']'
 + '[' -e kernel/include ']'
 + echo 'merge cmn/include/ -> kernel/include'
 merge cmn/include/ -> kernel/include
@@ -158,6 +176,7 @@ merge cmn/include/ -> kernel/include
 + '[' -d cmn/init/ ']'
 ++ basename cmn/init/
 + b=init
++ '[' init = kernel_platform ']'
 + '[' -e kernel/init ']'
 + echo 'merge cmn/init/ -> kernel/init'
 merge cmn/init/ -> kernel/init
@@ -166,6 +185,7 @@ merge cmn/init/ -> kernel/init
 + '[' -d cmn/io_uring/ ']'
 ++ basename cmn/io_uring/
 + b=io_uring
++ '[' io_uring = kernel_platform ']'
 + '[' -e kernel/io_uring ']'
 + echo 'merge cmn/io_uring/ -> kernel/io_uring'
 merge cmn/io_uring/ -> kernel/io_uring
@@ -174,6 +194,7 @@ merge cmn/io_uring/ -> kernel/io_uring
 + '[' -d cmn/ipc/ ']'
 ++ basename cmn/ipc/
 + b=ipc
++ '[' ipc = kernel_platform ']'
 + '[' -e kernel/ipc ']'
 + echo 'merge cmn/ipc/ -> kernel/ipc'
 merge cmn/ipc/ -> kernel/ipc
@@ -182,6 +203,7 @@ merge cmn/ipc/ -> kernel/ipc
 + '[' -d cmn/kernel/ ']'
 ++ basename cmn/kernel/
 + b=kernel
++ '[' kernel = kernel_platform ']'
 + '[' -e kernel/kernel ']'
 + echo 'merge cmn/kernel/ -> kernel/kernel'
 merge cmn/kernel/ -> kernel/kernel
@@ -190,6 +212,7 @@ merge cmn/kernel/ -> kernel/kernel
 + '[' -d cmn/lib/ ']'
 ++ basename cmn/lib/
 + b=lib
++ '[' lib = kernel_platform ']'
 + '[' -e kernel/lib ']'
 + echo 'merge cmn/lib/ -> kernel/lib'
 merge cmn/lib/ -> kernel/lib
@@ -198,6 +221,7 @@ merge cmn/lib/ -> kernel/lib
 + '[' -d cmn/mm/ ']'
 ++ basename cmn/mm/
 + b=mm
++ '[' mm = kernel_platform ']'
 + '[' -e kernel/mm ']'
 + echo 'merge cmn/mm/ -> kernel/mm'
 merge cmn/mm/ -> kernel/mm
@@ -206,6 +230,7 @@ merge cmn/mm/ -> kernel/mm
 + '[' -d cmn/net/ ']'
 ++ basename cmn/net/
 + b=net
++ '[' net = kernel_platform ']'
 + '[' -e kernel/net ']'
 + echo 'merge cmn/net/ -> kernel/net'
 merge cmn/net/ -> kernel/net
@@ -214,6 +239,7 @@ merge cmn/net/ -> kernel/net
 + '[' -d cmn/samples/ ']'
 ++ basename cmn/samples/
 + b=samples
++ '[' samples = kernel_platform ']'
 + '[' -e kernel/samples ']'
 + echo 'merge cmn/samples/ -> kernel/samples'
 merge cmn/samples/ -> kernel/samples
@@ -222,6 +248,7 @@ merge cmn/samples/ -> kernel/samples
 + '[' -d cmn/scripts/ ']'
 ++ basename cmn/scripts/
 + b=scripts
++ '[' scripts = kernel_platform ']'
 + '[' -e kernel/scripts ']'
 + echo 'merge cmn/scripts/ -> kernel/scripts'
 merge cmn/scripts/ -> kernel/scripts
@@ -230,6 +257,7 @@ merge cmn/scripts/ -> kernel/scripts
 + '[' -d cmn/security/ ']'
 ++ basename cmn/security/
 + b=security
++ '[' security = kernel_platform ']'
 + '[' -e kernel/security ']'
 + echo 'merge cmn/security/ -> kernel/security'
 merge cmn/security/ -> kernel/security
@@ -238,6 +266,7 @@ merge cmn/security/ -> kernel/security
 + '[' -d cmn/sound/ ']'
 ++ basename cmn/sound/
 + b=sound
++ '[' sound = kernel_platform ']'
 + '[' -e kernel/sound ']'
 + echo 'merge cmn/sound/ -> kernel/sound'
 merge cmn/sound/ -> kernel/sound
@@ -246,6 +275,7 @@ merge cmn/sound/ -> kernel/sound
 + '[' -d cmn/tools/ ']'
 ++ basename cmn/tools/
 + b=tools
++ '[' tools = kernel_platform ']'
 + '[' -e kernel/tools ']'
 + echo 'merge cmn/tools/ -> kernel/tools'
 merge cmn/tools/ -> kernel/tools
@@ -254,6 +284,7 @@ merge cmn/tools/ -> kernel/tools
 + '[' -d cmn/usr/ ']'
 ++ basename cmn/usr/
 + b=usr
++ '[' usr = kernel_platform ']'
 + '[' -e kernel/usr ']'
 + echo 'merge cmn/usr/ -> kernel/usr'
 merge cmn/usr/ -> kernel/usr
@@ -262,6 +293,7 @@ merge cmn/usr/ -> kernel/usr
 + '[' -d cmn/virt/ ']'
 ++ basename cmn/virt/
 + b=virt
++ '[' virt = kernel_platform ']'
 + '[' -e kernel/virt ']'
 + echo 'merge cmn/virt/ -> kernel/virt'
 merge cmn/virt/ -> kernel/virt
@@ -272,135 +304,117 @@ merge cmn/virt/ -> kernel/virt
 + true
 + ls -d vendor
 vendor
-+ echo '--- still dangling symlinks in the kernel tree ---'
---- still dangling symlinks in the kernel tree ---
++ echo '--- what the dangling links actually point at (raw readlink) ---'
+--- what the dangling links actually point at (raw readlink) ---
 + find kernel -xtype l
 + read l
-+ head -30
-++ readlink -f kernel/arch/arm64/boot/dts/vendor
-+ echo '  kernel/arch/arm64/boot/dts/vendor -> '
++ head -25
+++ readlink kernel/arch/arm64/boot/dts/vendor
++ echo '  kernel/arch/arm64/boot/dts/vendor -> ../../../../../qcom/proprietary/devicetree'
+  kernel/arch/arm64/boot/dts/vendor -> ../../../../../qcom/proprietary/devicetree
 + read l
-++ readlink -f kernel/arch/arm/boot/dts/vendor
-+ echo '  kernel/arch/arm/boot/dts/vendor -> '
+++ readlink kernel/arch/arm/boot/dts/vendor
++ echo '  kernel/arch/arm/boot/dts/vendor -> ../../../arm64/boot/dts/vendor'
+  kernel/arch/arm/boot/dts/vendor -> ../../../arm64/boot/dts/vendor
 + read l
-++ readlink -f kernel/include/soc/oplus/dfr
-+ echo '  kernel/include/soc/oplus/dfr -> '
+++ readlink kernel/include/soc/oplus/dfr
++ echo '  kernel/include/soc/oplus/dfr -> ../../../../../vendor/oplus/kernel/dfr/include'
+  kernel/include/soc/oplus/dfr -> ../../../../../vendor/oplus/kernel/dfr/include
 + read l
-++ readlink -f kernel/include/soc/oplus/dft
-+ echo '  kernel/include/soc/oplus/dft -> '
+++ readlink kernel/include/soc/oplus/dft
++ echo '  kernel/include/soc/oplus/dft -> ../../../../../vendor/oplus/kernel/dft/include'
+  kernel/include/soc/oplus/dft -> ../../../../../vendor/oplus/kernel/dft/include
 + read l
-++ readlink -f kernel/include/soc/oplus/touchpanel_event_notify.h
-+ echo '  kernel/include/soc/oplus/touchpanel_event_notify.h -> '
+++ readlink kernel/include/soc/oplus/touchpanel_event_notify.h
++ echo '  kernel/include/soc/oplus/touchpanel_event_notify.h -> ../../../../../vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2/touchpanel_notify/touchpanel_event_notify.h'
+  kernel/include/soc/oplus/touchpanel_event_notify.h -> ../../../../../vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2/touchpanel_notify/touchpanel_event_notify.h
 + read l
-++ readlink -f kernel/include/soc/oplus/boot
-+ echo '  kernel/include/soc/oplus/boot -> '
+++ readlink kernel/include/soc/oplus/boot
++ echo '  kernel/include/soc/oplus/boot -> ../../../../../vendor/oplus/kernel/boot/include'
+  kernel/include/soc/oplus/boot -> ../../../../../vendor/oplus/kernel/boot/include
 + read l
-++ readlink -f kernel/include/soc/oplus/oplus_mm_kevent_fb.h
-+ echo '  kernel/include/soc/oplus/oplus_mm_kevent_fb.h -> '
+++ readlink kernel/include/soc/oplus/oplus_mm_kevent_fb.h
++ echo '  kernel/include/soc/oplus/oplus_mm_kevent_fb.h -> ../../../../../vendor/oplus/kernel/multimedia/feedback/oplus_mm_kevent_fb.h'
+  kernel/include/soc/oplus/oplus_mm_kevent_fb.h -> ../../../../../vendor/oplus/kernel/multimedia/feedback/oplus_mm_kevent_fb.h
 + read l
-++ readlink -f kernel/include/linux/cpufreq_effiency.h
-+ echo '  kernel/include/linux/cpufreq_effiency.h -> '
+++ readlink kernel/include/linux/cpufreq_effiency.h
++ echo '  kernel/include/linux/cpufreq_effiency.h -> ../../kernel/oplus_cpu/cpufreq_effiency/cpufreq_effiency.h'
+  kernel/include/linux/cpufreq_effiency.h -> ../../kernel/oplus_cpu/cpufreq_effiency/cpufreq_effiency.h
 + read l
-++ readlink -f kernel/include/linux/cpufreq_health.h
-+ echo '  kernel/include/linux/cpufreq_health.h -> '
+++ readlink kernel/include/linux/cpufreq_health.h
++ echo '  kernel/include/linux/cpufreq_health.h -> ../../kernel/oplus_cpu/cpufreq_health/cpufreq_health.h'
+  kernel/include/linux/cpufreq_health.h -> ../../kernel/oplus_cpu/cpufreq_health/cpufreq_health.h
 + read l
-++ readlink -f kernel/kernel/oplus_cpu
-+ echo '  kernel/kernel/oplus_cpu -> '
+++ readlink kernel/kernel/oplus_cpu
++ echo '  kernel/kernel/oplus_cpu -> ../../../vendor/oplus/kernel/cpu'
+  kernel/kernel/oplus_cpu -> ../../../vendor/oplus/kernel/cpu
 + read l
-++ readlink -f kernel/kernel/sched/walt/oem_sched
-+ echo '  kernel/kernel/sched/walt/oem_sched -> '
+++ readlink kernel/kernel/sched/walt/oem_sched
++ echo '  kernel/kernel/sched/walt/oem_sched -> ../../oplus_cpu/misc/sched_assist'
+  kernel/kernel/sched/walt/oem_sched -> ../../oplus_cpu/misc/sched_assist
 + read l
-++ readlink -f kernel/kernel/sched/walt/tuning
-+ echo '  kernel/kernel/sched/walt/tuning -> '
+++ readlink kernel/kernel/sched/walt/tuning
++ echo '  kernel/kernel/sched/walt/tuning -> ../../../../../vendor/oplus/kernel/oplus_performance_5.10/misc/sched_input_boost/'
+  kernel/kernel/sched/walt/tuning -> ../../../../../vendor/oplus/kernel/oplus_performance_5.10/misc/sched_input_boost/
 + read l
-++ readlink -f kernel/kernel/locking/oplus_locking
-+ echo '  kernel/kernel/locking/oplus_locking -> '
+++ readlink kernel/kernel/locking/oplus_locking
++ echo '  kernel/kernel/locking/oplus_locking -> ../../../../vendor/oplus/kernel/synchronize'
+  kernel/kernel/locking/oplus_locking -> ../../../../vendor/oplus/kernel/synchronize
 + read l
-++ readlink -f kernel/android/abi_gki_aarch64_oplus_internal
-+ echo '  kernel/android/abi_gki_aarch64_oplus_internal -> '
+++ readlink kernel/android/abi_gki_aarch64_oplus_internal
++ echo '  kernel/android/abi_gki_aarch64_oplus_internal -> ../../oplus/config/abi_gki_aarch64_oplus_internal'
+  kernel/android/abi_gki_aarch64_oplus_internal -> ../../oplus/config/abi_gki_aarch64_oplus_internal
 + read l
-++ readlink -f kernel/drivers/base/kernelFwUpdate
-+ echo '  kernel/drivers/base/kernelFwUpdate -> '
+++ readlink kernel/drivers/base/kernelFwUpdate
++ echo '  kernel/drivers/base/kernelFwUpdate -> ../../../../vendor/oplus/kernel/touchpanel/kernelFwUpdate'
+  kernel/drivers/base/kernelFwUpdate -> ../../../../vendor/oplus/kernel/touchpanel/kernelFwUpdate
 + read l
-++ readlink -f kernel/drivers/misc/oplus_procs_load
-+ echo '  kernel/drivers/misc/oplus_procs_load -> '
+++ readlink kernel/drivers/misc/oplus_procs_load
++ echo '  kernel/drivers/misc/oplus_procs_load -> ../../../../vendor/oplus/kernel/power/procs_load/'
+  kernel/drivers/misc/oplus_procs_load -> ../../../../vendor/oplus/kernel/power/procs_load/
 + read l
-++ readlink -f kernel/drivers/input/oplus_secure_drivers
-+ echo '  kernel/drivers/input/oplus_secure_drivers -> '
+++ readlink kernel/drivers/input/oplus_secure_drivers
++ echo '  kernel/drivers/input/oplus_secure_drivers -> ../../../../vendor/oplus/secure/common/bsp/drivers'
+  kernel/drivers/input/oplus_secure_drivers -> ../../../../vendor/oplus/secure/common/bsp/drivers
 + read l
-++ readlink -f kernel/drivers/input/touchscreen/synaptics_hbp
-+ echo '  kernel/drivers/input/touchscreen/synaptics_hbp -> '
+++ readlink kernel/drivers/input/touchscreen/synaptics_hbp
++ echo '  kernel/drivers/input/touchscreen/synaptics_hbp -> ../../../../../vendor/oplus/kernel/touchpanel/synaptics_hbp/'
+  kernel/drivers/input/touchscreen/synaptics_hbp -> ../../../../../vendor/oplus/kernel/touchpanel/synaptics_hbp/
 + read l
-++ readlink -f kernel/drivers/input/touchscreen/oplus_touchscreen_v2
-+ echo '  kernel/drivers/input/touchscreen/oplus_touchscreen_v2 -> '
+++ readlink kernel/drivers/input/touchscreen/oplus_touchscreen_v2
++ echo '  kernel/drivers/input/touchscreen/oplus_touchscreen_v2 -> ../../../../../vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2'
+  kernel/drivers/input/touchscreen/oplus_touchscreen_v2 -> ../../../../../vendor/oplus/kernel/touchpanel/oplus_touchscreen_v2
 + read l
-++ readlink -f kernel/drivers/input/oplus_fp_driver
-+ echo '  kernel/drivers/input/oplus_fp_driver -> '
+++ readlink kernel/drivers/input/oplus_fp_driver
++ echo '  kernel/drivers/input/oplus_fp_driver -> ../../../../vendor/oplus/secure/biometrics/fingerprints/bsp/drivers_kernel/component3.0/qcom'
+  kernel/drivers/input/oplus_fp_driver -> ../../../../vendor/oplus/secure/biometrics/fingerprints/bsp/drivers_kernel/component3.0/qcom
 + read l
-++ readlink -f kernel/drivers/input/uff_fp_drivers
-+ echo '  kernel/drivers/input/uff_fp_drivers -> '
+++ readlink kernel/drivers/input/uff_fp_drivers
++ echo '  kernel/drivers/input/uff_fp_drivers -> ../../../../vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver'
+  kernel/drivers/input/uff_fp_drivers -> ../../../../vendor/oplus/secure/biometrics/fingerprints/bsp/uff/driver
 + read l
-++ readlink -f kernel/drivers/android/oplus_binder
-+ echo '  kernel/drivers/android/oplus_binder -> '
+++ readlink kernel/drivers/android/oplus_binder
++ echo '  kernel/drivers/android/oplus_binder -> ../../../../vendor/oplus/kernel/ipc'
+  kernel/drivers/android/oplus_binder -> ../../../../vendor/oplus/kernel/ipc
 + read l
-++ readlink -f kernel/drivers/soc/oplus/device_info
-+ echo '  kernel/drivers/soc/oplus/device_info -> '
+++ readlink kernel/drivers/soc/oplus/device_info
++ echo '  kernel/drivers/soc/oplus/device_info -> ../../../../../vendor/oplus/kernel/device_info/device_info'
+  kernel/drivers/soc/oplus/device_info -> ../../../../../vendor/oplus/kernel/device_info/device_info
 + read l
-++ readlink -f kernel/drivers/soc/oplus/hans
-+ echo '  kernel/drivers/soc/oplus/hans -> '
+++ readlink kernel/drivers/soc/oplus/hans
++ echo '  kernel/drivers/soc/oplus/hans -> ../../../../../vendor/oplus/kernel/hans'
+  kernel/drivers/soc/oplus/hans -> ../../../../../vendor/oplus/kernel/hans
 + read l
-++ readlink -f kernel/drivers/soc/oplus/dfr
-+ echo '  kernel/drivers/soc/oplus/dfr -> '
+++ readlink kernel/drivers/soc/oplus/dfr
++ echo '  kernel/drivers/soc/oplus/dfr -> ../../../../../vendor/oplus/kernel/dfr'
+  kernel/drivers/soc/oplus/dfr -> ../../../../../vendor/oplus/kernel/dfr
 + read l
-++ readlink -f kernel/drivers/soc/oplus/oplus_consumer_ir
-+ echo '  kernel/drivers/soc/oplus/oplus_consumer_ir -> '
++ echo '--- still dangling after the merge ---'
+--- still dangling after the merge ---
++ find kernel -xtype l
++ wc -l
+39
 + read l
-++ readlink -f kernel/drivers/soc/oplus/storage
-+ echo '  kernel/drivers/soc/oplus/storage -> '
-+ read l
-++ readlink -f kernel/drivers/soc/oplus/multimedia
-+ echo '  kernel/drivers/soc/oplus/multimedia -> '
-+ read l
-++ readlink -f kernel/drivers/soc/oplus/sensor
-+ echo '  kernel/drivers/soc/oplus/sensor -> '
-+ read l
-++ readlink -f kernel/drivers/soc/oplus/mdmrst
-+ echo '  kernel/drivers/soc/oplus/mdmrst -> '
-+ read l
-  kernel/arch/arm64/boot/dts/vendor -> 
-  kernel/arch/arm/boot/dts/vendor -> 
-  kernel/include/soc/oplus/dfr -> 
-  kernel/include/soc/oplus/dft -> 
-  kernel/include/soc/oplus/touchpanel_event_notify.h -> 
-  kernel/include/soc/oplus/boot -> 
-  kernel/include/soc/oplus/oplus_mm_kevent_fb.h -> 
-  kernel/include/linux/cpufreq_effiency.h -> 
-  kernel/include/linux/cpufreq_health.h -> 
-  kernel/kernel/oplus_cpu -> 
-  kernel/kernel/sched/walt/oem_sched -> 
-  kernel/kernel/sched/walt/tuning -> 
-  kernel/kernel/locking/oplus_locking -> 
-  kernel/android/abi_gki_aarch64_oplus_internal -> 
-  kernel/drivers/base/kernelFwUpdate -> 
-  kernel/drivers/misc/oplus_procs_load -> 
-  kernel/drivers/input/oplus_secure_drivers -> 
-  kernel/drivers/input/touchscreen/synaptics_hbp -> 
-  kernel/drivers/input/touchscreen/oplus_touchscreen_v2 -> 
-  kernel/drivers/input/oplus_fp_driver -> 
-  kernel/drivers/input/uff_fp_drivers -> 
-  kernel/drivers/android/oplus_binder -> 
-  kernel/drivers/soc/oplus/device_info -> 
-  kernel/drivers/soc/oplus/hans -> 
-  kernel/drivers/soc/oplus/dfr -> 
-  kernel/drivers/soc/oplus/oplus_consumer_ir -> 
-  kernel/drivers/soc/oplus/storage -> 
-  kernel/drivers/soc/oplus/multimedia -> 
-  kernel/drivers/soc/oplus/sensor -> 
-  kernel/drivers/soc/oplus/mdmrst -> 
-++ readlink -f kernel/drivers/soc/oplus/mdmfeature
-+ echo '  kernel/drivers/soc/oplus/mdmfeature -> '
-/home/runner/work/_temp/ad9c076b-3300-490c-bbf2-918d29911df5.sh: line 37: echo: write error: Broken pipe
 ++ find kernel -xtype l
-+ for l in $(find kernel -xtype l)
 ++ readlink -f kernel/arch/arm64/boot/dts/vendor
 + t=

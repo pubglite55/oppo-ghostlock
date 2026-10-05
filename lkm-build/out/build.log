@@ -1,0 +1,7 @@
+== toolchain ==
+Android (7284624, based on r416183b) clang version 12.0.5 (https://android.googlesource.com/toolchain/llvm-project c935d99d7cf2016289302412d708641d52d2f7ee)
+Target: x86_64-unknown-linux-gnu
+== configure the vendor tree with the device's exact config ==
+== olddefconfig (auto-stubbing unpublished vendor Kconfigs) ==
+  stubbing unpublished Kconfig: kernel/oplus_cpu/sched/Kconfig
+mkdir: cannot create directory ‘kernel/oplus_cpu’: File exists

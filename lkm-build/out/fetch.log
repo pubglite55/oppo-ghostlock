@@ -1,0 +1,406 @@
++ B=oppo/sm8475_b_16.0.0_find_n2
++ try https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2 kml.tgz
+++ curl -fL --retry 8 --retry-delay 5 --retry-all-errors -w '%{http_code}' -o kml.tgz https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
+++ tail -1
++ code=200
+++ stat -c%s kml.tgz
++ echo 'DOWNLOAD kml.tgz http=200 size=192054564 url=https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2'
+DOWNLOAD kml.tgz http=200 size=192054564 url=https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
++ try https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2 mods.tgz
+++ curl -fL --retry 8 --retry-delay 5 --retry-all-errors -w '%{http_code}' -o mods.tgz https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
+++ tail -1
++ code=200
+++ stat -c%s mods.tgz
++ echo 'DOWNLOAD mods.tgz http=200 size=43114899 url=https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2'
+DOWNLOAD mods.tgz http=200 size=43114899 url=https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
++ try https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2 cmn.tgz
+++ curl -fL --retry 8 --retry-delay 5 --retry-all-errors -w '%{http_code}' -o cmn.tgz https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
+++ tail -1
++ code=200
+++ stat -c%s cmn.tgz
++ echo 'DOWNLOAD cmn.tgz http=200 size=188579793 url=https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2'
+DOWNLOAD cmn.tgz http=200 size=188579793 url=https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
++ ls -l cmn.tgz kml.tgz mods.tgz
+-rw-r--r-- 1 runner runner 188579793 Oct  5 14:05 cmn.tgz
+-rw-r--r-- 1 runner runner 192054564 Oct  5 14:04 kml.tgz
+-rw-r--r-- 1 runner runner  43114899 Oct  5 14:04 mods.tgz
++ mkdir -p kernel
++ tar -xzf kml.tgz -C kernel --strip-components=1
++ '[' -s mods.tgz ']'
++ mkdir -p mods
++ tar -xzf mods.tgz -C mods --strip-components=1
++ '[' -s cmn.tgz ']'
++ mkdir -p cmn
++ tar -xzf cmn.tgz -C cmn --strip-components=1
++ grep -m1 SUBLEVEL kernel/Makefile
+SUBLEVEL = 236
++ echo '--- modules repo top level ---'
+--- modules repo top level ---
++ ls mods
++ head -40
+kernel_platform
+vendor
++ echo '--- common repo top level ---'
+--- common repo top level ---
++ ls cmn
++ head -20
+COPYING
+CREDITS
+Documentation
+Kbuild
+Kconfig
+LICENSES
+MAINTAINERS
+Makefile
+OWNERS
+README
+README.md
+android
+arch
+block
+build.config.aarch64
+build.config.allmodconfig
+build.config.allmodconfig.aarch64
+build.config.allmodconfig.arm
+build.config.allmodconfig.x86_64
+build.config.amlogic
++ for d in mods/*/ cmn/*/
++ '[' -d mods/kernel_platform/ ']'
+++ basename mods/kernel_platform/
++ b=kernel_platform
++ '[' -e kernel/kernel_platform ']'
++ for d in mods/*/ cmn/*/
++ '[' -d mods/vendor/ ']'
+++ basename mods/vendor/
++ b=vendor
++ '[' -e kernel/vendor ']'
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/Documentation/ ']'
+++ basename cmn/Documentation/
++ b=Documentation
++ '[' -e kernel/Documentation ']'
++ echo 'merge cmn/Documentation/ -> kernel/Documentation'
+merge cmn/Documentation/ -> kernel/Documentation
++ cp -an cmn/Documentation/. kernel/Documentation/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/LICENSES/ ']'
+++ basename cmn/LICENSES/
++ b=LICENSES
++ '[' -e kernel/LICENSES ']'
++ echo 'merge cmn/LICENSES/ -> kernel/LICENSES'
+merge cmn/LICENSES/ -> kernel/LICENSES
++ cp -an cmn/LICENSES/. kernel/LICENSES/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/android/ ']'
+++ basename cmn/android/
++ b=android
++ '[' -e kernel/android ']'
++ echo 'merge cmn/android/ -> kernel/android'
+merge cmn/android/ -> kernel/android
++ cp -an cmn/android/. kernel/android/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/arch/ ']'
+++ basename cmn/arch/
++ b=arch
++ '[' -e kernel/arch ']'
++ echo 'merge cmn/arch/ -> kernel/arch'
+merge cmn/arch/ -> kernel/arch
++ cp -an cmn/arch/. kernel/arch/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/block/ ']'
+++ basename cmn/block/
++ b=block
++ '[' -e kernel/block ']'
++ echo 'merge cmn/block/ -> kernel/block'
+merge cmn/block/ -> kernel/block
++ cp -an cmn/block/. kernel/block/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/certs/ ']'
+++ basename cmn/certs/
++ b=certs
++ '[' -e kernel/certs ']'
++ echo 'merge cmn/certs/ -> kernel/certs'
+merge cmn/certs/ -> kernel/certs
++ cp -an cmn/certs/. kernel/certs/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/crypto/ ']'
+++ basename cmn/crypto/
++ b=crypto
++ '[' -e kernel/crypto ']'
++ echo 'merge cmn/crypto/ -> kernel/crypto'
+merge cmn/crypto/ -> kernel/crypto
++ cp -an cmn/crypto/. kernel/crypto/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/drivers/ ']'
+++ basename cmn/drivers/
++ b=drivers
++ '[' -e kernel/drivers ']'
++ echo 'merge cmn/drivers/ -> kernel/drivers'
+merge cmn/drivers/ -> kernel/drivers
++ cp -an cmn/drivers/. kernel/drivers/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/fs/ ']'
+++ basename cmn/fs/
++ b=fs
++ '[' -e kernel/fs ']'
++ echo 'merge cmn/fs/ -> kernel/fs'
+merge cmn/fs/ -> kernel/fs
++ cp -an cmn/fs/. kernel/fs/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/include/ ']'
+++ basename cmn/include/
++ b=include
++ '[' -e kernel/include ']'
++ echo 'merge cmn/include/ -> kernel/include'
+merge cmn/include/ -> kernel/include
++ cp -an cmn/include/. kernel/include/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/init/ ']'
+++ basename cmn/init/
++ b=init
++ '[' -e kernel/init ']'
++ echo 'merge cmn/init/ -> kernel/init'
+merge cmn/init/ -> kernel/init
++ cp -an cmn/init/. kernel/init/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/io_uring/ ']'
+++ basename cmn/io_uring/
++ b=io_uring
++ '[' -e kernel/io_uring ']'
++ echo 'merge cmn/io_uring/ -> kernel/io_uring'
+merge cmn/io_uring/ -> kernel/io_uring
++ cp -an cmn/io_uring/. kernel/io_uring/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/ipc/ ']'
+++ basename cmn/ipc/
++ b=ipc
++ '[' -e kernel/ipc ']'
++ echo 'merge cmn/ipc/ -> kernel/ipc'
+merge cmn/ipc/ -> kernel/ipc
++ cp -an cmn/ipc/. kernel/ipc/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/kernel/ ']'
+++ basename cmn/kernel/
++ b=kernel
++ '[' -e kernel/kernel ']'
++ echo 'merge cmn/kernel/ -> kernel/kernel'
+merge cmn/kernel/ -> kernel/kernel
++ cp -an cmn/kernel/. kernel/kernel/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/lib/ ']'
+++ basename cmn/lib/
++ b=lib
++ '[' -e kernel/lib ']'
++ echo 'merge cmn/lib/ -> kernel/lib'
+merge cmn/lib/ -> kernel/lib
++ cp -an cmn/lib/. kernel/lib/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/mm/ ']'
+++ basename cmn/mm/
++ b=mm
++ '[' -e kernel/mm ']'
++ echo 'merge cmn/mm/ -> kernel/mm'
+merge cmn/mm/ -> kernel/mm
++ cp -an cmn/mm/. kernel/mm/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/net/ ']'
+++ basename cmn/net/
++ b=net
++ '[' -e kernel/net ']'
++ echo 'merge cmn/net/ -> kernel/net'
+merge cmn/net/ -> kernel/net
++ cp -an cmn/net/. kernel/net/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/samples/ ']'
+++ basename cmn/samples/
++ b=samples
++ '[' -e kernel/samples ']'
++ echo 'merge cmn/samples/ -> kernel/samples'
+merge cmn/samples/ -> kernel/samples
++ cp -an cmn/samples/. kernel/samples/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/scripts/ ']'
+++ basename cmn/scripts/
++ b=scripts
++ '[' -e kernel/scripts ']'
++ echo 'merge cmn/scripts/ -> kernel/scripts'
+merge cmn/scripts/ -> kernel/scripts
++ cp -an cmn/scripts/. kernel/scripts/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/security/ ']'
+++ basename cmn/security/
++ b=security
++ '[' -e kernel/security ']'
++ echo 'merge cmn/security/ -> kernel/security'
+merge cmn/security/ -> kernel/security
++ cp -an cmn/security/. kernel/security/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/sound/ ']'
+++ basename cmn/sound/
++ b=sound
++ '[' -e kernel/sound ']'
++ echo 'merge cmn/sound/ -> kernel/sound'
+merge cmn/sound/ -> kernel/sound
++ cp -an cmn/sound/. kernel/sound/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/tools/ ']'
+++ basename cmn/tools/
++ b=tools
++ '[' -e kernel/tools ']'
++ echo 'merge cmn/tools/ -> kernel/tools'
+merge cmn/tools/ -> kernel/tools
++ cp -an cmn/tools/. kernel/tools/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/usr/ ']'
+++ basename cmn/usr/
++ b=usr
++ '[' -e kernel/usr ']'
++ echo 'merge cmn/usr/ -> kernel/usr'
+merge cmn/usr/ -> kernel/usr
++ cp -an cmn/usr/. kernel/usr/
++ for d in mods/*/ cmn/*/
++ '[' -d cmn/virt/ ']'
+++ basename cmn/virt/
++ b=virt
++ '[' -e kernel/virt ']'
++ echo 'merge cmn/virt/ -> kernel/virt'
+merge cmn/virt/ -> kernel/virt
++ cp -an cmn/virt/. kernel/virt/
++ '[' -d mods/vendor ']'
++ cp -an mods/vendor .
++ '[' -d cmn/vendor ']'
++ true
++ ls -d vendor
+vendor
++ echo '--- still dangling symlinks in the kernel tree ---'
+--- still dangling symlinks in the kernel tree ---
++ find kernel -xtype l
++ read l
++ head -30
+++ readlink -f kernel/arch/arm64/boot/dts/vendor
++ echo '  kernel/arch/arm64/boot/dts/vendor -> '
++ read l
+++ readlink -f kernel/arch/arm/boot/dts/vendor
++ echo '  kernel/arch/arm/boot/dts/vendor -> '
++ read l
+++ readlink -f kernel/include/soc/oplus/dfr
++ echo '  kernel/include/soc/oplus/dfr -> '
++ read l
+++ readlink -f kernel/include/soc/oplus/dft
++ echo '  kernel/include/soc/oplus/dft -> '
++ read l
+++ readlink -f kernel/include/soc/oplus/touchpanel_event_notify.h
++ echo '  kernel/include/soc/oplus/touchpanel_event_notify.h -> '
++ read l
+++ readlink -f kernel/include/soc/oplus/boot
++ echo '  kernel/include/soc/oplus/boot -> '
++ read l
+++ readlink -f kernel/include/soc/oplus/oplus_mm_kevent_fb.h
++ echo '  kernel/include/soc/oplus/oplus_mm_kevent_fb.h -> '
++ read l
+++ readlink -f kernel/include/linux/cpufreq_effiency.h
++ echo '  kernel/include/linux/cpufreq_effiency.h -> '
++ read l
+++ readlink -f kernel/include/linux/cpufreq_health.h
++ echo '  kernel/include/linux/cpufreq_health.h -> '
++ read l
+++ readlink -f kernel/kernel/oplus_cpu
++ echo '  kernel/kernel/oplus_cpu -> '
++ read l
+++ readlink -f kernel/kernel/sched/walt/oem_sched
++ echo '  kernel/kernel/sched/walt/oem_sched -> '
++ read l
+++ readlink -f kernel/kernel/sched/walt/tuning
++ echo '  kernel/kernel/sched/walt/tuning -> '
++ read l
+++ readlink -f kernel/kernel/locking/oplus_locking
++ echo '  kernel/kernel/locking/oplus_locking -> '
++ read l
+++ readlink -f kernel/android/abi_gki_aarch64_oplus_internal
++ echo '  kernel/android/abi_gki_aarch64_oplus_internal -> '
++ read l
+++ readlink -f kernel/drivers/base/kernelFwUpdate
++ echo '  kernel/drivers/base/kernelFwUpdate -> '
++ read l
+++ readlink -f kernel/drivers/misc/oplus_procs_load
++ echo '  kernel/drivers/misc/oplus_procs_load -> '
++ read l
+++ readlink -f kernel/drivers/input/oplus_secure_drivers
++ echo '  kernel/drivers/input/oplus_secure_drivers -> '
++ read l
+++ readlink -f kernel/drivers/input/touchscreen/synaptics_hbp
++ echo '  kernel/drivers/input/touchscreen/synaptics_hbp -> '
++ read l
+++ readlink -f kernel/drivers/input/touchscreen/oplus_touchscreen_v2
++ echo '  kernel/drivers/input/touchscreen/oplus_touchscreen_v2 -> '
++ read l
+++ readlink -f kernel/drivers/input/oplus_fp_driver
++ echo '  kernel/drivers/input/oplus_fp_driver -> '
++ read l
+++ readlink -f kernel/drivers/input/uff_fp_drivers
++ echo '  kernel/drivers/input/uff_fp_drivers -> '
++ read l
+++ readlink -f kernel/drivers/android/oplus_binder
++ echo '  kernel/drivers/android/oplus_binder -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/device_info
++ echo '  kernel/drivers/soc/oplus/device_info -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/hans
++ echo '  kernel/drivers/soc/oplus/hans -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/dfr
++ echo '  kernel/drivers/soc/oplus/dfr -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/oplus_consumer_ir
++ echo '  kernel/drivers/soc/oplus/oplus_consumer_ir -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/storage
++ echo '  kernel/drivers/soc/oplus/storage -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/multimedia
++ echo '  kernel/drivers/soc/oplus/multimedia -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/sensor
++ echo '  kernel/drivers/soc/oplus/sensor -> '
++ read l
+++ readlink -f kernel/drivers/soc/oplus/mdmrst
++ echo '  kernel/drivers/soc/oplus/mdmrst -> '
++ read l
+  kernel/arch/arm64/boot/dts/vendor -> 
+  kernel/arch/arm/boot/dts/vendor -> 
+  kernel/include/soc/oplus/dfr -> 
+  kernel/include/soc/oplus/dft -> 
+  kernel/include/soc/oplus/touchpanel_event_notify.h -> 
+  kernel/include/soc/oplus/boot -> 
+  kernel/include/soc/oplus/oplus_mm_kevent_fb.h -> 
+  kernel/include/linux/cpufreq_effiency.h -> 
+  kernel/include/linux/cpufreq_health.h -> 
+  kernel/kernel/oplus_cpu -> 
+  kernel/kernel/sched/walt/oem_sched -> 
+  kernel/kernel/sched/walt/tuning -> 
+  kernel/kernel/locking/oplus_locking -> 
+  kernel/android/abi_gki_aarch64_oplus_internal -> 
+  kernel/drivers/base/kernelFwUpdate -> 
+  kernel/drivers/misc/oplus_procs_load -> 
+  kernel/drivers/input/oplus_secure_drivers -> 
+  kernel/drivers/input/touchscreen/synaptics_hbp -> 
+  kernel/drivers/input/touchscreen/oplus_touchscreen_v2 -> 
+  kernel/drivers/input/oplus_fp_driver -> 
+  kernel/drivers/input/uff_fp_drivers -> 
+  kernel/drivers/android/oplus_binder -> 
+  kernel/drivers/soc/oplus/device_info -> 
+  kernel/drivers/soc/oplus/hans -> 
+  kernel/drivers/soc/oplus/dfr -> 
+  kernel/drivers/soc/oplus/oplus_consumer_ir -> 
+  kernel/drivers/soc/oplus/storage -> 
+  kernel/drivers/soc/oplus/multimedia -> 
+  kernel/drivers/soc/oplus/sensor -> 
+  kernel/drivers/soc/oplus/mdmrst -> 
+++ readlink -f kernel/drivers/soc/oplus/mdmfeature
++ echo '  kernel/drivers/soc/oplus/mdmfeature -> '
+/home/runner/work/_temp/ad9c076b-3300-490c-bbf2-918d29911df5.sh: line 37: echo: write error: Broken pipe
+++ find kernel -xtype l
++ for l in $(find kernel -xtype l)
+++ readlink -f kernel/arch/arm64/boot/dts/vendor
++ t=

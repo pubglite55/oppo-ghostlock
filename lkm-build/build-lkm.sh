@@ -19,7 +19,26 @@ clang --version | head -2
 echo "== configure the vendor tree with the device's exact config =="
 cd "$KSRC"
 cp "$CONFIG" .config
-make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+# OPPO's published tree references vendor Kconfig files that are NOT published (e.g.
+# kernel/oplus_cpu/sched/Kconfig).  olddefconfig dies on the first missing one, so stub them one
+# at a time until Kconfig is satisfied.  Systematic on purpose: there may be a dozen.
+echo "== olddefconfig (auto-stubbing unpublished vendor Kconfigs) =="
+for try in $(seq 1 60); do
+  if make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig >/tmp/od.log 2>&1; then
+    echo "olddefconfig OK after $((try-1)) stub(s)"; break
+  fi
+  MISS=$(grep -oE 'can.t open file "[^"]+"' /tmp/od.log | head -1 | sed 's/.*"\(.*\)"/\1/')
+  if [ -z "$MISS" ]; then
+    echo "!! olddefconfig failed for a non-Kconfig reason:"; tail -25 /tmp/od.log; exit 1
+  fi
+  echo "  stubbing unpublished Kconfig: $MISS"
+  mkdir -p "$(dirname "$MISS")"
+  {
+    echo "# [ci stub] this Kconfig is referenced by the published OPPO tree but not published."
+    echo "# Stubbed so kbuild can configure; the options it would define are simply absent."
+  } > "$MISS"
+  if [ "$try" = "60" ]; then echo "!! still failing after 60 stubs"; tail -25 /tmp/od.log; exit 1; fi
+done
 
 echo "== modules_prepare =="
 make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare

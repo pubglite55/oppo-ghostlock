@@ -11,6 +11,9 @@ KSRC="${KSRC:-$PWD/kernel}"
 KSU="${KSU:-$PWD/KernelSU}"
 CLANG="${CLANG:-$PWD/clang}"
 CONFIG="${CONFIG:-$PWD/config-5.10.236}"
+# ★ 本脚本稍后会 cd 进内核树；存根目录必须在【那之前】解析成绝对路径，
+#   否则 '$(dirname "$0")/stubs/…' 会相对内核树解析 ⇒ cp: No such file or directory（CI run 37384268383 就是这么挂的）。
+STUBS="$(cd "$(dirname "$0")" && pwd)/stubs"
 
 echo "== toolchain =="
 export PATH="$CLANG/bin:$PATH"
@@ -127,7 +130,7 @@ ls -l security/selinux/flask.h security/selinux/av_permissions.h
 # 该文件只实现"隐藏痕迹"；root 本身、manager 授权、su 交接、mount namespace 都在别处，
 # 所以换成只提供 ksu_selinux_hide_init/_exit 的存根不影响拿到 KernelSU root。
 echo "== replace feature/selinux_hide.c with the no-SELinux-internals stub =="
-cp -f "$(dirname "$0")/stubs/selinux_hide_stub.c" "$KSU/kernel/feature/selinux_hide.c"
+cp -f "$STUBS/selinux_hide_stub.c" "$KSU/kernel/feature/selinux_hide.c"
 if grep -qE 'avc_has_perm|avtab_search_node|ebitmap_get_bit' "$KSU/kernel/feature/selinux_hide.c"; then
   echo "  !! stub did not take (SELinux internals still referenced)"; exit 1
 fi

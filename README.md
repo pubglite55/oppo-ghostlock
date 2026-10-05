@@ -21,6 +21,45 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 
 三轮独立运行(N2 / P2 / K3)全部命中,证据见 `docs/evidence-root-*.log`。
 
+### ★ 零环境变量单条命令(2026-10-05,mt99P「worker + park」)
+
+```bash
+adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"
+# uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),… context=u:r:shell:s0
+```
+
+一次调用内完成 **stage 1(SELinux enforcing→0)** 与 **stage 2(caps 提权 + 交还原始命令行)**,不依赖任何环境变量。
+实测设备状态:同一 boot **`uptime` 连续**、`enforce=Permissive`、**`unknown SID=0`**、`workqueue lockup` 不累积、
+`oops=0`、framework 正常(`zygote+system_server` 在)。
+
+#### 为什么必须 worker + park(本轮 5 次对照实测)
+
+| 证据 | 结论 |
+|---|---|
+| run B / run D:**fired write 之后对同一个 task 做 execve** | 999~1072 条 `unknown SID` + 同进程每秒重试 binder(-22) → **exec 可执行文件返回 ENOENT**、PowerManager 消失 → framework 塌 → 黑屏/看门狗复位 |
+| stage1-only(write 落地、**无 execve**)跑 6.5 分钟 | `uSID=0 / wq=0 / framework 在` —— 单打 SELinux 无害 |
+| stage2-only(trigger 0 发)跑 6.5 分钟 | 同样无害 |
+| run C(stage1 跳过 → stage2 fired) | 无害 |
+| 「execve 立刻拆 mm 就 panic」 | **证伪**:两次 execve 都成功、stage 2 之后正常跑满 60s;真凶是**延迟的内核状态破坏** |
+
+因此:**每个 arb write 都在独立 worker 子进程里发生,写完 `pause()` 永久 park**(绝不 `_exit`、绝不 `execve`);
+**调用者进程永不成为写入者**(它的 exit 因此安全);root 仍由 stage-2 worker 里**在 trigger 之前** fork 出来的
+`cred_child` 持有并 exec 原始命令行。
+
+另外三条本轮换来的硬教训:
+
+1. **完成信号不能用文件**:提权后 payload 的 fs view 已损坏(`open(O_CREAT)` 失败),`root_alive.txt` 永不出现
+   → worker 误判「no root」→ `exit(-1)` 变 zombie、coordinator 空转 5 分钟。改用**继承的 pipe fd**
+   (`select` peek 不消费),root 落地瞬间通知。
+2. **只回收「未打中」的 worker**:未打中 ⇒ `enforce` 仍为 1 ⇒ 没写过 ⇒ 未中毒 ⇒ 可安全 SIGKILL。
+   否则一个 park 住的 worker 带着 ~950 个 parked 子进程 + 64GB 映射,第二次重试叠上去直接打复位设备。
+3. **设备侧 fsync 不可信**:`/data` 挂载参数 **`fsync_mode=nobarrier`**,崩溃/复位后取证文件必变
+   `-?????????`(损坏 inode,`stat/rm/push` 全 EACCES,永久钉死)。取证必须走
+   **trace 直写调用者 stdout(adb socket)+ host 侧 `tee`**。
+
+> 下一步目标:**KernelSU Live** —— 把 `mt97 finit_module` / `mt96 ksud` 挪到 hand-off **之前**(在 root 子进程里执行),
+> 并解决 `CAP_SYS_MODULE(bit16)` 的确定性置位(当前写入值是指针,caps 位取决于地址位)。
+
 ### 关键机制:用 caps 写入绕开厂商反 root 守护
 
 OPPO 的 `oplus_security_guard.ko` 只比较 `uid/euid/gid/egid` 的**下降沿**,**不读 capabilities**;

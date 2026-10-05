@@ -75,8 +75,8 @@ Makefile:548: MSM_ARCH: --
   WRAP    arch/arm64/include/generated/uapi/asm/poll.h
   WRAP    arch/arm64/include/generated/uapi/asm/resource.h
   WRAP    arch/arm64/include/generated/uapi/asm/sembuf.h
-  WRAP    arch/arm64/include/generated/uapi/asm/siginfo.h
   WRAP    arch/arm64/include/generated/uapi/asm/shmbuf.h
+  WRAP    arch/arm64/include/generated/uapi/asm/siginfo.h
   WRAP    arch/arm64/include/generated/uapi/asm/socket.h
   WRAP    arch/arm64/include/generated/uapi/asm/sockios.h
   WRAP    arch/arm64/include/generated/uapi/asm/stat.h
@@ -132,11 +132,11 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/asm-generic/posix_types.h
   HDRINST usr/include/asm-generic/bitsperlong.h
   HDRINST usr/include/asm-generic/types.h
-  HOSTCC  scripts/dtc/dtc-lexer.lex.o
   HDRINST usr/include/asm-generic/termios.h
+  HOSTCC  scripts/dtc/dtc-lexer.lex.o
   HDRINST usr/include/asm-generic/errno-base.h
-  HOSTCC  scripts/dtc/dtc-parser.tab.o
   HDRINST usr/include/asm-generic/termbits.h
+  HOSTCC  scripts/dtc/dtc-parser.tab.o
   HDRINST usr/include/asm-generic/stat.h
   HDRINST usr/include/asm-generic/socket.h
   HDRINST usr/include/asm-generic/kvm_para.h
@@ -174,10 +174,10 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/drm/drm_sarea.h
   HDRINST usr/include/drm/lima_drm.h
   HDRINST usr/include/drm/nouveau_drm.h
-  HOSTLD  scripts/dtc/dtc
   HDRINST usr/include/drm/etnaviv_drm.h
   HDRINST usr/include/drm/drm.h
   HDRINST usr/include/drm/amdgpu_drm.h
+  HOSTLD  scripts/dtc/dtc
   HDRINST usr/include/drm/vmwgfx_drm.h
   HDRINST usr/include/drm/panfrost_drm.h
   HDRINST usr/include/drm/radeon_drm.h
@@ -188,11 +188,11 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/drm/i915_drm.h
   HDRINST usr/include/drm/v3d_drm.h
   HDRINST usr/include/drm/drm_fourcc.h
-  HOSTCC  scripts/genksyms/genksyms.o
-  HOSTCC  scripts/selinux/genheaders/genheaders
-  HOSTCC  scripts/kallsyms
   HDRINST usr/include/drm/exynos_drm.h
+  HOSTCC  scripts/genksyms/genksyms.o
+  YACC    scripts/genksyms/parse.tab.[ch]
   HDRINST usr/include/drm/r128_drm.h
+  HOSTCC  scripts/selinux/genheaders/genheaders
   HDRINST usr/include/drm/virtgpu_drm.h
   HDRINST usr/include/drm/qxl_drm.h
   HDRINST usr/include/drm/i810_drm.h
@@ -200,27 +200,27 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/tty.h
   HDRINST usr/include/linux/netfilter_arp.h
   HDRINST usr/include/linux/in.h
-  HOSTCC  scripts/selinux/mdp/mdp
   HDRINST usr/include/linux/pcitest.h
+  HOSTCC  scripts/selinux/mdp/mdp
   HDRINST usr/include/linux/virtio_ids.h
   HDRINST usr/include/linux/nfs2.h
   HDRINST usr/include/linux/uhid.h
   HDRINST usr/include/linux/if_vlan.h
-  YACC    scripts/genksyms/parse.tab.[ch]
   HDRINST usr/include/linux/kernel-page-flags.h
+  HOSTCC  scripts/kallsyms
   HDRINST usr/include/linux/quota.h
+  LEX     scripts/genksyms/lex.lex.c
+  HOSTCC  scripts/genksyms/parse.tab.o
   HDRINST usr/include/linux/netfilter.h
   HDRINST usr/include/linux/timerfd.h
   HDRINST usr/include/linux/bpf.h
   HOSTCC  scripts/sorttable
-  HOSTCC  scripts/asn1_compiler
   HDRINST usr/include/linux/kexec.h
   HDRINST usr/include/linux/nfs3.h
   HDRINST usr/include/linux/hdlc.h
   HDRINST usr/include/linux/lp.h
-  LEX     scripts/genksyms/lex.lex.c
   HDRINST usr/include/linux/vfio_zdev.h
-  HOSTCC  scripts/genksyms/parse.tab.o
+  HOSTCC  scripts/genksyms/lex.lex.o
   HDRINST usr/include/linux/sem.h
   HDRINST usr/include/linux/blkzoned.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_mark_m.h
@@ -228,16 +228,16 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/netfilter_bridge/ebt_redirect.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_arpreply.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_arp.h
-  HOSTCC  scripts/extract-cert
+  HOSTCC  scripts/asn1_compiler
   HDRINST usr/include/linux/netfilter_bridge/ebt_among.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_log.h
+  HOSTCC  scripts/extract-cert
   HDRINST usr/include/linux/netfilter_bridge/ebt_pkttype.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_vlan.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_nflog.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_stp.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_mark_t.h
   HDRINST usr/include/linux/netfilter_bridge/ebtables.h
-  HOSTCC  scripts/genksyms/lex.lex.o
   HDRINST usr/include/linux/netfilter_bridge/ebt_ip6.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_limit.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_802_3.h
@@ -252,6 +252,7 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/membarrier.h
   HDRINST usr/include/linux/udmabuf.h
   HDRINST usr/include/linux/am437x-vpfe.h
+  HOSTLD  scripts/genksyms/genksyms
   HDRINST usr/include/linux/spss_utils.h
   HDRINST usr/include/linux/cryptouser.h
   HDRINST usr/include/linux/virtio_crypto.h
@@ -285,7 +286,6 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/qg.h
   HDRINST usr/include/linux/tipc_config.h
   HDRINST usr/include/linux/nexthop.h
-  HOSTLD  scripts/genksyms/genksyms
   HDRINST usr/include/linux/suspend_ioctls.h
   HDRINST usr/include/linux/cn_proc.h
   HDRINST usr/include/linux/input.h
@@ -360,11 +360,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/atmbr2684.h
   HDRINST usr/include/linux/in_route.h
   HDRINST usr/include/linux/gtp.h
-  CC      scripts/mod/empty.o
   HDRINST usr/include/linux/atmdev.h
-  HOSTCC  scripts/mod/mk_elfconfig
   HDRINST usr/include/linux/userio.h
-  CC      scripts/mod/devicetable-offsets.s
   HDRINST usr/include/linux/ppp-comp.h
   HDRINST usr/include/linux/smc.h
   HDRINST usr/include/linux/nfsacl.h
@@ -372,19 +369,17 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/v4l2-mediabus.h
   HDRINST usr/include/linux/isst_if.h
   HDRINST usr/include/linux/uio.h
-  UPD     scripts/mod/devicetable-offsets.h
   HDRINST usr/include/linux/rfkill.h
-  MKELF   scripts/mod/elfconfig.h
-  HOSTCC  scripts/mod/modpost.o
-  HOSTCC  scripts/mod/file2alias.o
   HDRINST usr/include/linux/blktrace_api.h
-  HOSTCC  scripts/mod/sumversion.o
   HDRINST usr/include/linux/raw.h
   HDRINST usr/include/linux/i2c.h
   HDRINST usr/include/linux/pidfd.h
   HDRINST usr/include/linux/f2fs.h
+  CC      scripts/mod/empty.o
   HDRINST usr/include/linux/limits.h
+  HOSTCC  scripts/mod/mk_elfconfig
   HDRINST usr/include/linux/close_range.h
+  CC      scripts/mod/devicetable-offsets.s
   HDRINST usr/include/linux/um_timetravel.h
   HDRINST usr/include/linux/cramfs_fs.h
   HDRINST usr/include/linux/kcmp.h
@@ -393,9 +388,14 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/reiserfs_fs.h
   HDRINST usr/include/linux/tcp.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_frag.h
+  UPD     scripts/mod/devicetable-offsets.h
+  MKELF   scripts/mod/elfconfig.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_hl.h
+  HOSTCC  scripts/mod/modpost.o
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_REJECT.h
+  HOSTCC  scripts/mod/file2alias.o
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_ipv6header.h
+  HOSTCC  scripts/mod/sumversion.o
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_NPT.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_opts.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_mh.h
@@ -475,7 +475,6 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/xfrm.h
   HDRINST usr/include/linux/virtio_iommu.h
   HDRINST usr/include/linux/if_ppp.h
-  HOSTLD  scripts/mod/modpost
   HDRINST usr/include/linux/if_addrlabel.h
   HDRINST usr/include/linux/ppdev.h
   HDRINST usr/include/linux/cec-funcs.h
@@ -485,11 +484,9 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/mrp_bridge.h
   HDRINST usr/include/linux/mdio.h
   HDRINST usr/include/linux/if_slip.h
+  HOSTLD  scripts/mod/modpost
   HDRINST usr/include/linux/qnxtypes.h
-  CC      kernel/bounds.s
-  CALL    scripts/atomic/check-atomics.sh
   HDRINST usr/include/linux/hsi/hsi_char.h
-  UPD     include/generated/timeconst.h
   HDRINST usr/include/linux/hsi/cs-protocol.h
   HDRINST usr/include/linux/vm_sockets.h
   HDRINST usr/include/linux/atalk.h
@@ -498,7 +495,10 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/v4l2-subdev.h
   HDRINST usr/include/linux/dlm_netlink.h
   HDRINST usr/include/linux/thermal.h
+  CC      kernel/bounds.s
+  CALL    scripts/atomic/check-atomics.sh
   HDRINST usr/include/linux/smcinvoke.h
+  UPD     include/generated/timeconst.h
   HDRINST usr/include/linux/wireguard.h
   HDRINST usr/include/linux/sound.h
   HDRINST usr/include/linux/if_hippi.h
@@ -513,8 +513,6 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/icmp.h
   HDRINST usr/include/linux/fcntl.h
   HDRINST usr/include/linux/dlmconstants.h
-  UPD     include/generated/bounds.h
-  CC      arch/arm64/kernel/asm-offsets.s
   HDRINST usr/include/linux/icmpv6.h
   HDRINST usr/include/linux/atm_zatm.h
   HDRINST usr/include/linux/if_alg.h
@@ -525,6 +523,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/if_bonding.h
   HDRINST usr/include/linux/usb/ch9.h
   HDRINST usr/include/linux/usb/ch11.h
+  UPD     include/generated/bounds.h
+  CC      arch/arm64/kernel/asm-offsets.s
   HDRINST usr/include/linux/usb/audio.h
   HDRINST usr/include/linux/usb/video.h
   HDRINST usr/include/linux/usb/charger.h
@@ -627,8 +627,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/spi/spidev.h
   HDRINST usr/include/linux/nsfs.h
   HDRINST usr/include/linux/ivtvfb.h
-  HDRINST usr/include/linux/cdrom.h
   HDRINST usr/include/linux/tcp_metrics.h
+  HDRINST usr/include/linux/cdrom.h
   HDRINST usr/include/linux/vfio_ccw.h
   HDRINST usr/include/linux/auxvec.h
   HDRINST usr/include/linux/signal.h
@@ -674,8 +674,6 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/videodev2.h
   HDRINST usr/include/linux/if_tun.h
   HDRINST usr/include/linux/nvram.h
-  UPD     include/generated/asm-offsets.h
-  CALL    scripts/checksyscalls.sh
   HDRINST usr/include/linux/stddef.h
   HDRINST usr/include/linux/isdn/capicmd.h
   HDRINST usr/include/linux/gpio.h
@@ -688,14 +686,12 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/serial_reg.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_TTL.h
   HDRINST usr/include/linux/netfilter_ipv4/ip_tables.h
-  LDS     arch/arm64/kernel/vdso/vdso.lds
   HDRINST usr/include/linux/netfilter_ipv4/ipt_LOG.h
-  CC      arch/arm64/kernel/vdso/vgettimeofday.o
-  AS      arch/arm64/kernel/vdso/note.o
   HDRINST usr/include/linux/netfilter_ipv4/ipt_CLUSTERIP.h
+  UPD     include/generated/asm-offsets.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_ah.h
+  CALL    scripts/checksyscalls.sh
   HDRINST usr/include/linux/netfilter_ipv4/ipt_ecn.h
-  AS      arch/arm64/kernel/vdso/sigreturn.o
   HDRINST usr/include/linux/netfilter_ipv4/ipt_ttl.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_ECN.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_REJECT.h
@@ -711,17 +707,19 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/iommu.h
   HDRINST usr/include/linux/psci.h
   HDRINST usr/include/linux/virtio_input.h
+  LDS     arch/arm64/kernel/vdso/vdso.lds
   HDRINST usr/include/linux/soundcard.h
+  CC      arch/arm64/kernel/vdso/vgettimeofday.o
+  AS      arch/arm64/kernel/vdso/note.o
   HDRINST usr/include/linux/can.h
+  AS      arch/arm64/kernel/vdso/sigreturn.o
   HDRINST usr/include/linux/media-bus-format.h
   HDRINST usr/include/linux/mii.h
   HDRINST usr/include/linux/netfilter_ipv6.h
   HDRINST usr/include/linux/if_xdp.h
   HDRINST usr/include/linux/rxrpc.h
   HDRINST usr/include/linux/fpga-dfl.h
-  LD      arch/arm64/kernel/vdso/vdso.so.dbg
   HDRINST usr/include/linux/nvme_ioctl.h
-  VDSOSYM include/generated/vdso-offsets.h
   HDRINST usr/include/linux/coda.h
   HDRINST usr/include/linux/tipc_sockets_diag.h
   HDRINST usr/include/linux/inotify.h
@@ -736,9 +734,11 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/scif_ioctl.h
   HDRINST usr/include/linux/cciss_ioctl.h
   HDRINST usr/include/linux/vhost_types.h
+  LD      arch/arm64/kernel/vdso/vdso.so.dbg
   HDRINST usr/include/linux/batman_adv.h
   HDRINST usr/include/linux/nbd.h
   HDRINST usr/include/linux/bt-bmc.h
+  VDSOSYM include/generated/vdso-offsets.h
   HDRINST usr/include/linux/udf_fs_i.h
   HDRINST usr/include/linux/if_phonet.h
   HDRINST usr/include/linux/cyclades.h
@@ -766,12 +766,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/mem-buf.h
   HDRINST usr/include/linux/bfs_fs.h
   HDRINST usr/include/linux/posix_acl.h
-  LDS     arch/arm64/kernel/vdso32/vdso.lds
-  CC32    arch/arm64/kernel/vdso32/note.o
-  CC32    arch/arm64/kernel/vdso32/vgettimeofday.o
   HDRINST usr/include/linux/kvm.h
   HDRINST usr/include/linux/dlm_device.h
-  HOSTCC  arch/arm64/kernel/vdso32/../../../arm/vdso/vdsomunge
   HDRINST usr/include/linux/btrfs_tree.h
   HDRINST usr/include/linux/gfs2_ondisk.h
   HDRINST usr/include/linux/un.h
@@ -788,25 +784,26 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/fsi.h
   HDRINST usr/include/linux/virtio_rng.h
   HDRINST usr/include/linux/rio_cm_cdev.h
+  LDS     arch/arm64/kernel/vdso32/vdso.lds
   HDRINST usr/include/linux/uvcvideo.h
+  CC32    arch/arm64/kernel/vdso32/note.o
   HDRINST usr/include/linux/msm_ion_ids.h
+  CC32    arch/arm64/kernel/vdso32/vgettimeofday.o
   HDRINST usr/include/linux/nfs_fs.h
   HDRINST usr/include/linux/hiddev.h
   HDRINST usr/include/linux/jffs2.h
+  HOSTCC  arch/arm64/kernel/vdso32/../../../arm/vdso/vdsomunge
   HDRINST usr/include/linux/bpf_perf_event.h
   HDRINST usr/include/linux/atm_he.h
   HDRINST usr/include/linux/lirc.h
   HDRINST usr/include/linux/ethtool.h
   HDRINST usr/include/linux/psp-sev.h
   HDRINST usr/include/linux/nfc/nfcinfo.h
-  LD32    arch/arm64/kernel/vdso32/vdso.so.raw
   HDRINST usr/include/linux/virtio_blk.h
   HDRINST usr/include/linux/seg6_genl.h
-  MUNGE   arch/arm64/kernel/vdso32/vdso.so.dbg
   HDRINST usr/include/linux/userfaultfd.h
   HDRINST usr/include/linux/virtio_fs.h
   HDRINST usr/include/linux/raid/md_p.h
-  VDSOSYM include/generated/vdso32-offsets.h
   HDRINST usr/include/linux/raid/md_u.h
   HDRINST usr/include/linux/mroute.h
   HDRINST usr/include/linux/mei.h
@@ -826,14 +823,17 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/mtio.h
   HDRINST usr/include/linux/ipmi_bmc.h
   HDRINST usr/include/linux/arcfb.h
+  LD32    arch/arm64/kernel/vdso32/vdso.so.raw
   HDRINST usr/include/linux/ipv6.h
   HDRINST usr/include/linux/tipc_netlink.h
   HDRINST usr/include/linux/elf.h
+  MUNGE   arch/arm64/kernel/vdso32/vdso.so.dbg
   HDRINST usr/include/linux/gsmmux.h
   HDRINST usr/include/linux/dqblk_xfs.h
   HDRINST usr/include/linux/hpet.h
   HDRINST usr/include/linux/sysinfo.h
   HDRINST usr/include/linux/net.h
+  VDSOSYM include/generated/vdso32-offsets.h
   HDRINST usr/include/linux/if_plip.h
   HDRINST usr/include/linux/signalfd.h
   HDRINST usr/include/linux/pci_regs.h
@@ -867,8 +867,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/efs_fs_sb.h
   HDRINST usr/include/linux/incrementalfs.h
   HDRINST usr/include/linux/aspeed-lpc-ctrl.h
-  HDRINST usr/include/linux/dcbnl.h
   HDRINST usr/include/linux/binfmts.h
+  HDRINST usr/include/linux/dcbnl.h
   HDRINST usr/include/linux/capi.h
   HDRINST usr/include/linux/netrom.h
   HDRINST usr/include/linux/zorro.h
@@ -915,8 +915,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/netfilter/xt_RATEEST.h
   HDRINST usr/include/linux/netfilter/nf_conntrack_tuple_common.h
   HDRINST usr/include/linux/netfilter/xt_connbytes.h
-  HDRINST usr/include/linux/netfilter/xt_dccp.h
   HDRINST usr/include/linux/netfilter/nf_log.h
+  HDRINST usr/include/linux/netfilter/xt_dccp.h
   HDRINST usr/include/linux/netfilter/nfnetlink_conntrack.h
   HDRINST usr/include/linux/netfilter/xt_pkttype.h
   HDRINST usr/include/linux/netfilter/xt_policy.h
@@ -1046,8 +1046,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/rdma/ib_user_mad.h
   HDRINST usr/include/rdma/vmw_pvrdma-abi.h
   HDRINST usr/include/rdma/ocrdma-abi.h
-  HDRINST usr/include/scsi/cxlflash_ioctl.h
   HDRINST usr/include/scsi/scsi_bsg_fc.h
+  HDRINST usr/include/scsi/cxlflash_ioctl.h
   HDRINST usr/include/scsi/scsi_bsg_ufs.h
   HDRINST usr/include/scsi/scsi_netlink_fc.h
   HDRINST usr/include/scsi/scsi_netlink.h
@@ -1112,8 +1112,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/asm/kvm_para.h
   HDRINST usr/include/asm/errno.h
   HDRINST usr/include/asm/swab.h
-  HDRINST usr/include/asm/ioctls.h
   HDRINST usr/include/asm/ioctl.h
+  HDRINST usr/include/asm/ioctls.h
   HDRINST usr/include/asm/resource.h
   HDRINST usr/include/asm/shmbuf.h
   HDRINST usr/include/asm/msgbuf.h
@@ -1140,8 +1140,8 @@ Makefile:548: MSM_ARCH: --
   CC      fs/drop_caches.o
   CC      fs/dcookies.o
   CC      kernel/kheaders.o
-  AR      kernel/built-in.a
   AR      fs/built-in.a
+  AR      kernel/built-in.a
 !! vmlinux build failed - continuing (module will still ENOENT on load)
 !! Module.symvers still missing - modpost will not validate symbols
 == generate the SELinux generated headers (module-only builds skip them) ==
@@ -1170,7 +1170,7 @@ Makefile:548: MSM_ARCH: --
   CC      security/selinux/ss/context.o
   CC      security/selinux/vendor_hooks.o
   AR      security/selinux/built-in.a
--rw-r--r-- 1 runner runner 104050 Oct  5 22:50 security/selinux/av_permissions.h
--rw-r--r-- 1 runner runner   8413 Oct  5 22:50 security/selinux/flask.h
+-rw-r--r-- 1 runner runner 104050 Oct  5 23:00 security/selinux/av_permissions.h
+-rw-r--r-- 1 runner runner   8413 Oct  5 23:00 security/selinux/flask.h
 == replace feature/selinux_hide.c with the no-SELinux-internals stub ==
-cp: cannot stat 'lkm-build/stubs/selinux_hide_stub.c': No such file or directory
+  !! stub did not take (SELinux internals still referenced)

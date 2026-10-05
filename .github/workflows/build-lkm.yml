@@ -32,21 +32,39 @@ jobs:
       - name: Show runner toolchain
         run: uname -a; gcc --version | head -1; make --version | head -1; nproc
 
-      - name: Fetch vendor kernel source (oppo-source, Find N2 Android 16 branch)
+      - name: Fetch vendor kernel source + the two OPPO side repos
         run: |
+          set -x
           # Tarball via codeload instead of 'git clone': one HTTP GET with retries is far more
-          # reliable than a 1.2 GB shallow clone on a flaky runner link (the clone failed outright
-          # in the previous run), and it needs no git history we do not use.
-          curl -fL --retry 8 --retry-delay 5 --retry-all-errors -o kml.tgz \
-            "https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2"
-          ls -l kml.tgz
-          mkdir -p kernel && tar -xzf kml.tgz -C kernel --strip-components=1
+          # reliable than a 1.2 GB shallow clone on a flaky runner link.
+          CL="curl -fL --retry 8 --retry-delay 5 --retry-all-errors"
+          B=oppo/sm8475_b_16.0.0_find_n2
+          $CL -o kml.tgz   "https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/$B"
+          $CL -o mods.tgz  "https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/$B"
+          $CL -o cmn.tgz   "https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/$B" || true
+          mkdir -p kernel && tar -xzf kml.tgz  -C kernel --strip-components=1
+          mkdir -p mods   && tar -xzf mods.tgz -C mods   --strip-components=1
+          [ -s cmn.tgz ] && { mkdir -p cmn && tar -xzf cmn.tgz -C cmn --strip-components=1; } || true
           grep -m1 'SUBLEVEL' kernel/Makefile
-          # OPPO keeps part of the vendor code outside the published tree: a few in-tree symlinks
-          # (mm/oplus_mm, net/oplus_modules) dangle.  kbuild walks those directories during
-          # modules_prepare, so materialise empty targets to keep the walk alive - none of them is
-          # needed to build the kernelsu module itself.
-          for l in $(find kernel -xtype l); do t=$(readlink -f "$l"); echo "materialising $t (for $l)"; mkdir -p "$t"; done
+          echo "--- modules repo top level ---"; ls mods | head -40
+          # OPPO splits this device across three repos.  The kernel tree references the others:
+          #   - in-tree symlinks like mm/oplus_mm -> ../../../vendor/oplus/kernel/mm
+          #     (= a sibling 'vendor/' next to the kernel tree)
+          #   - init/Kconfig sources kernel/oplus_cpu/sched/Kconfig
+          # So merge the vendor additions into the kernel tree (no-clobber) and put a 'vendor'
+          # sibling in place, then report whatever is still dangling.
+          for d in mods/*/ cmn/*/; do
+            [ -d "$d" ] || continue
+            b=$(basename "$d")
+            if [ -e "kernel/$b" ]; then echo "merge $d -> kernel/$b"; cp -an "$d." "kernel/$b/" 2>/dev/null || true; fi
+          done
+          [ -d mods/vendor ] && cp -an mods/vendor . 2>/dev/null || true
+          [ -d cmn/vendor ]  && cp -an cmn/vendor  . 2>/dev/null || true
+          ls -d vendor 2>/dev/null || echo "(no vendor sibling yet)"
+          echo "--- still dangling symlinks in the kernel tree ---"
+          find kernel -xtype l | while read l; do echo "  $l -> $(readlink -f "$l")"; done | head -30
+          # materialise anything still dangling as an empty dir so kbuild can walk it
+          for l in $(find kernel -xtype l); do t=$(readlink -f "$l"); mkdir -p "$t"; done
 
       - name: Fetch AOSP clang r416183b (the 5.10-CFI-era compiler, Linux native)
         run: |

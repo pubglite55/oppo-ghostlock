@@ -19,6 +19,15 @@ clang --version | head -2
 echo "== configure the vendor tree with the device's exact config =="
 cd "$KSRC"
 cp "$CONFIG" .config
+# The device's /proc/config.gz carries build-machine paths from OPPO's internal workspace, e.g.
+# CONFIG_UNUSED_KSYMS_WHITELIST="/work/0008/workspace/Build_S_Vendor/60183/.../abi_symbollist".
+# Generating include/generated/autoksyms.h then fails outright (Makefile:1438) because that file
+# does not exist here.  Symbol trimming only decides WHICH symbols get exported - it changes no
+# struct layout - and disabling it exports more, never fewer, so the module's symbol resolution
+# can only get easier.
+./scripts/config --file .config --disable TRIM_UNUSED_KSYMS
+./scripts/config --file .config --set-str UNUSED_KSYMS_WHITELIST ""
+echo "trim/whitelist neutralised:"; grep -E "TRIM_UNUSED_KSYMS|UNUSED_KSYMS_WHITELIST" .config
 # OPPO's published tree references vendor Kconfig files that are NOT published (e.g.
 # kernel/oplus_cpu/sched/Kconfig).  olddefconfig dies on the first missing one, so stub them one
 # at a time until Kconfig is satisfied.  Systematic on purpose: there may be a dozen.

@@ -34,9 +34,13 @@ jobs:
 
       - name: Fetch vendor kernel source (oppo-source, Find N2 Android 16 branch)
         run: |
-          git clone --depth 1 -b oppo/sm8475_b_16.0.0_find_n2 \
-            https://github.com/oppo-source/android_kernel_oppo_sm8475 kernel
-          head -6 kernel/Makefile
+          # Tarball via codeload instead of 'git clone': one HTTP GET with retries is far more
+          # reliable than a 1.2 GB shallow clone on a flaky runner link (the clone failed outright
+          # in the previous run), and it needs no git history we do not use.
+          curl -fL --retry 8 --retry-delay 5 --retry-all-errors -o kml.tgz \
+            "https://codeload.github.com/oppo-source/android_kernel_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2"
+          ls -l kml.tgz
+          mkdir -p kernel && tar -xzf kml.tgz -C kernel --strip-components=1
           grep -m1 'SUBLEVEL' kernel/Makefile
           # OPPO keeps part of the vendor code outside the published tree: a few in-tree symlinks
           # (mm/oplus_mm, net/oplus_modules) dangle.  kbuild walks those directories during
@@ -88,7 +92,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f lkm-build/out/kernelsu.ko lkm-build/out/build.log
+          git add -f lkm-build/out/kernelsu.ko lkm-build/out/build.log 2>/dev/null || git add -f -A lkm-build/out 2>/dev/null || echo "nothing to add"
           git commit -m "ci: kernelsu.ko built against vendor 5.10.236 (run ${{ github.run_id }})" || echo "nothing to commit"
           git push origin HEAD:test || echo "push failed (non-fatal: the artifact upload below still provides it)"
 

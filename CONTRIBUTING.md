@@ -1,5 +1,7 @@
 # 贡献指南
 
+> 状态（2026-10-05 冻结）：本项目已达成「零环境变量单条命令真 root（uid=0）」（产物 `preloadP.so`，sha256 `b5128c72…`，214,040 B）；KernelSU 未 Live。当前构建走 `bash C:/Users/L1872/Desktop/oppo-2/build_v29.sh`，产物在 `exploit-v29/build/oppo-find_n2/bin/preload.so`。最新权威记录见 [`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](_docs/handoff/preload一键提权-mt99K-20261005-1600.md)。
+
 感谢你对本项目的关注！本项目是 OPPO Find N2 上 GhostLock (CVE-2026-43499) 漏洞利用的研究项目。
 
 ## 贡献方式

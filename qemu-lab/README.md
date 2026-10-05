@@ -1,9 +1,11 @@
 # qemu-lab — arm64 5.10 guest for stage testing
 
+> 状态（2026-10-05 冻结）：实验台结论不变——TCG 无法复现依赖 CPU 时序的泄露/竞态，C 阶段能否打中不能在虚机验证；真机交付链路见 [`_docs/handoff/preload一键提权-mt99K-20261005-1600.md`](../_docs/handoff/preload一键提权-mt99K-20261005-1600.md)。
+
 用 QEMU 跑一个与目标同代(5.10.x)的 arm64 Linux,把有风险的 exploit 阶段挪到这里试,
 好拿到真机上拿不到的完整 dmesg / panic 输出。
 
-**建成并跑通,但结论是:对本漏洞价值有限** —— 详见 `docs/matisse-port.md §7`。
+**建成并跑通,但结论是:对本漏洞价值有限** —— 详见 `../docs/matisse-port.md §7`。
 
 ## 一句话结论
 

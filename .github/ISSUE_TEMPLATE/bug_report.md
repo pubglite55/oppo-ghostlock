@@ -12,9 +12,9 @@ assignees: ''
 
 ## 复现步骤
 
-1. 打开 Firefox 151
-2. 访问 'http://...'
-3. 点击 '...'
+1. `adb push build/oppo-find_n2/bin/preload.so /data/local/tmp/preloadP.so`
+2. `adb shell "LD_PRELOAD=/data/local/tmp/preloadP.so /system/bin/toybox id"`
+3. 观察输出与设备状态（`uptime`、`boot_id`、framework）
 4. 看到错误
 
 ## 预期行为
@@ -27,11 +27,10 @@ assignees: ''
 
 ## 环境信息
 
-- **设备**: OPPO Find N2 (CPH2413/PGU110)
-- **内核版本**: 5.10.236-android12-9
-- **Firefox 版本**: 151.0
+- **设备**: OPPO Find N2 (PGU110/SM8475)
+- **内核版本**: 5.10.236-android12-9-o-g74d132f4467a
+- **产物**: preloadP.so (`sha256 b5128c72…`, 214,040 B)
 - **Android 版本**: 16 (BP2A.250605.015)
-- **exploit 版本**: v0.3.0
 
 ## 日志/截图
 

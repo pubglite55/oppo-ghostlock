@@ -18,11 +18,11 @@ description: 编译并运行测试程序到 Android 设备
 ### 1. 编译测试程序
 
 ```bash
-cd /Users/xiuxiu391/Desktop/oppo/oppo-ghostlock
+cd C:/Users/L1872/Desktop/oppo
 
-NDK=/tmp/ndk_extract/android-ndk-r29
-CC=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android35-clang
-SYSROOT=$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot
+NDK=C:/Users/L1872/Desktop/oppo-2/android-ndk-r29
+CC=$NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android35-clang
+SYSROOT=$NDK/toolchains/llvm/prebuilt/windows-x86_64/sysroot
 
 $CC --target=aarch64-linux-android35 --sysroot=$SYSROOT \
   -O2 test-programs/test_xxx.c -o test_xxx

@@ -15,7 +15,7 @@ description: 从服务器 vmlinux 验证内核偏移和帧大小
 
 ## 前置条件
 
-- 服务器访问权限 (SSH key: /Users/xiuxiu391/Downloads/11.pem)
+- 服务器访问权限 (SSH key: ~/Downloads/11.pem)
 - 服务器上有编译好的 vmlinux
 
 ## 步骤
@@ -23,7 +23,7 @@ description: 从服务器 vmlinux 验证内核偏移和帧大小
 ### 1. 连接服务器
 
 ```bash
-ssh -i /Users/xiuxiu391/Downloads/11.pem -o ConnectTimeout=30 ubuntu@43.139.246.47
+ssh -i ~/Downloads/11.pem -o ConnectTimeout=30 ubuntu@43.139.246.47
 ```
 
 ### 2. 验证帧大小 (objdump)
@@ -65,7 +65,7 @@ for order in range(5):
 ### 5. 更新 target.h
 
 ```bash
-# 在本地编辑 exploit/targets/oppo-find_n2/target.h
+# 在本地编辑 exploit-v29/src/targets/oppo-find_n2/target.h
 ```
 
 ## 帧大小参考 (IDA output.elf 验证, 2026-07-12)

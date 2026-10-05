@@ -121,6 +121,25 @@ make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- 
      M="$KSU/kernel" CONFIG_KSU=m KSU_EXPECTED_SIZE="${KSU_EXPECTED_SIZE:-}" \
      KSU_EXPECTED_HASH="${KSU_EXPECTED_HASH:-}" modules
 
+# ── ★ 第二个版本：最小 KernelSU（去掉 manager/policy 集成）────────────────────────
+# 动机（实测）：完整版在设备上 finit_module(fd, flags=0) 返回 errno=2 ENOENT，
+# 即 simplify_symbols() 找不到某个符号 —— manager/policy 那块引用的内核符号最多
+# （而且 CI 缺 Module.symvers，modpost 根本没能校验过引用）。编一个最小版：
+#   · 若最小版能装载 ⇒ 说明就是某个 feature 引用了未导出符号，可逐块二分
+#   · 若最小版也 ENOENT ⇒ 是核心符号问题，就要靠 Module.symvers（见上面 vmlinux 那步）
+echo "== second artefact: minimal KernelSU (no manager / no policy) =="
+if make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- \
+     M="$KSU/kernel" CONFIG_KSU=m CONFIG_KSU_DISABLE_MANAGER=y CONFIG_KSU_DISABLE_POLICY=y \
+     KSU_EXPECTED_SIZE="${KSU_EXPECTED_SIZE:-}" KSU_EXPECTED_HASH="${KSU_EXPECTED_HASH:-}" modules 2>&1 | tail -12; then
+  if [ -f "$KSU/kernel/kernelsu.ko" ]; then
+    cp -f "$KSU/kernel/kernelsu.ko" ./kernelsu.minimal.ko
+    echo "== minimal artefact: $(stat -c %s ./kernelsu.minimal.ko) bytes =="
+    tr -c '[:print:]' '\n' < ./kernelsu.minimal.ko | grep -m1 '^vermagic='
+  fi
+else
+  echo "!! minimal build failed - only the full module will ship"
+fi
+
 echo "== locate the artefact =="
 find "$KSU/kernel" "$KSRC" -maxdepth 3 -name 'kernelsu.ko' -printf '%p  %s bytes\n' 2>/dev/null || true
 ls -l "$KSU/kernel/kernelsu.ko" 2>/dev/null || {

@@ -4,4 +4,4 @@ Target: x86_64-unknown-linux-gnu
 == configure the vendor tree with the device's exact config ==
 == olddefconfig (auto-stubbing unpublished vendor Kconfigs) ==
   stubbing unpublished Kconfig: kernel/oplus_cpu/sched/Kconfig
-mkdir: cannot create directory ‘kernel/oplus_cpu’: File exists
+lkm-build/build-lkm.sh: line 26: kernel/oplus_cpu/sched/Kconfig: No such file or directory

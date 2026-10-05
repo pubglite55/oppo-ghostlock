@@ -1,0 +1,70 @@
+name: build-kernelsu-lkm
+
+# Builds kernelsu.ko for the OPPO Find N2 (PGU110 / SM8475 / 5.10.236 vendor kernel) on a Linux
+# runner.  Done in CI on purpose: a Windows/MSYS host has no POSIX host toolchain for kbuild's
+# fixdep/asn1_compiler, and the AOSP clang this 5.10 CFI kernel needs is a Linux x86_64 binary.
+# On the runner both problems disappear: gcc+make are preinstalled and clang r416183b runs native.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ksu_ref:
+        description: "KernelSU ref to build (match your manager APK version)"
+        required: true
+        default: "v3.3.0"
+  push:
+    branches: [test]
+    paths:
+      - 'lkm-build/**'
+      - '.github/workflows/build-lkm.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show runner toolchain
+        run: uname -a; gcc --version | head -1; make --version | head -1; nproc
+
+      - name: Fetch vendor kernel source (oppo-source, Find N2 Android 16 branch)
+        run: |
+          git clone --depth 1 -b oppo/sm8475_b_16.0.0_find_n2 \
+            https://github.com/oppo-source/android_kernel_oppo_sm8475 kernel
+          head -6 kernel/Makefile
+          grep -m1 'SUBLEVEL' kernel/Makefile
+
+      - name: Fetch AOSP clang r416183b (the 5.10-CFI-era compiler, Linux native)
+        run: |
+          curl -fL --retry 5 --retry-delay 5 -o clang.tar.gz \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-12.0.0_r1/clang-r416183b.tar.gz"
+          mkdir -p clang && tar -xzf clang.tar.gz -C clang
+          ./clang/bin/clang --version | head -2
+
+      - name: Fetch KernelSU source
+        run: |
+          REF="${{ github.event.inputs.ksu_ref }}"
+          [ -z "$REF" ] && REF=v3.3.0
+          if ! git clone --depth 1 -b "$REF" https://github.com/tiann/KernelSU KernelSU; then
+            echo "ref $REF not found, falling back to main"
+            git clone --depth 1 https://github.com/tiann/KernelSU KernelSU
+          fi
+          ls KernelSU/kernel | head
+
+      - name: Build kernelsu.ko
+        env:
+          KSRC: ${{ github.workspace }}/kernel
+          KSU:  ${{ github.workspace }}/KernelSU
+          CLANG: ${{ github.workspace }}/clang
+          CONFIG: ${{ github.workspace }}/lkm-build/config-5.10.236
+        run: |
+          chmod +x lkm-build/build-lkm.sh
+          bash lkm-build/build-lkm.sh 2>&1 | tail -120
+
+      - name: Upload kernelsu.ko
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu-ko
+          path: KernelSU/kernel/kernelsu.ko
+          if-no-files-found: error

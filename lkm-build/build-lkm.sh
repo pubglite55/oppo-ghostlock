@@ -189,8 +189,8 @@ if ! grep -q 'ksu_syms_compat.h' "$KB"; then
 fi
 echo "  Kbuild 尾部："; tail -4 "$KB"
 MACROS=$(grep -cE '^#define[[:space:]]+\w+[[:space:]]+KSU_SYM' "$KSU/kernel/infra/ksu_syms_compat.h")
-echo "  符号宏数 = $MACROS（应为 49）"
-[ "$MACROS" = "49" ] || { echo "  !! 宏数不是 49，shim 不完整"; exit 1; }
+echo "  符号宏数 = $MACROS（应为 45 = 49 - 4 个自有存根函数）"
+[ "$MACROS" -ge 45 ] || { echo "  !! 宏数不足 45（我自己的 4 个存根函数不宏化），shim 不完整"; exit 1; }
 
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on

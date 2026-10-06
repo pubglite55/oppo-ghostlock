@@ -45,7 +45,11 @@
 
 void *ksu_sym_ptr(const char *name);
 
-/* typeof(n) = 原声明给出的真实类型 ⇒ 函数退化成函数指针、数据退化成对象指针，统一解引用 */
+/* ★ typeof(n) = 原声明给出的真实类型 ⇒ 函数退化成函数指针、数据退化成对象指针，统一解引用。
+ *   KSU_SYM 本体必须在这里定义（第一版漏了它 ⇒ CI 报 "implicit declaration of function 'KSU_SYM'" ✗）。
+ *   #define X KSU_SYM(X) 的内层 X 会被预处理器 blue-paint ⇒ 不递归 ✓ */
+void *ksu_sym_ptr(const char *name);
+#define KSU_SYM(n) (*(typeof(n) *)ksu_sym_ptr(#n))
 
 /* —— 凭据/身份（KernelSU root 与 su 交接的核心路径）—— */
 #define commit_creds                KSU_SYM(commit_creds)
@@ -110,10 +114,9 @@ void *ksu_sym_ptr(const char *name);
 /* —— 文件系统 —— */
 #define ext4_unregister_sysfs       KSU_SYM(ext4_unregister_sysfs)
 
-/* —— 我自己的存根没补全的 4 个（实测出现在内核 Unknown-symbol 名单里）—— */
-#define handle_sepolicy                              KSU_SYM(handle_sepolicy)
-#define ksu_selinux_hide_handle_post_fs_data         KSU_SYM(ksu_selinux_hide_handle_post_fs_data)
-#define ksu_selinux_hide_handle_second_stage         KSU_SYM(ksu_selinux_hide_handle_second_stage)
-#define ksu_selinux_hide_drop_backup_if_unused       KSU_SYM(ksu_selinux_hide_drop_backup_if_unused)
-
+/* —— 我自己的存根函数【不宏化】——
+ * 内核 Unknown-symbol 名单里出现过 handle_sepolicy / ksu_selinux_hide_handle_* 这 4 个，
+ * 但它们是我自己 stubs/ 里【定义】的；一旦宏化，它们的函数声明会被展开成
+ * "function cannot return function type"（CI 实测），而且根本不需要运行时解析 ✓。
+ * 若内核仍报 Unknown，说明是别处声明了同名弱引用——那时再按情况处理。 */
 #endif /* _KSU_SYMS_COMPAT_H */

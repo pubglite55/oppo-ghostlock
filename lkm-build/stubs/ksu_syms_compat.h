@@ -68,14 +68,18 @@ void *ksu_sym_ptr(const char *name);
 #define kallsyms_lookup_name        KSU_SYM(kallsyms_lookup_name)
 #define kallsyms_lookup_size_offset KSU_SYM(kallsyms_lookup_size_offset)
 
-/* —— 命名空间 / 路径（su 的 mount ns 交接）—— */
+/* —— 命名空间 / 路径（su 的 mount ns 交接）——
+ * ★ path_umount 在【本颗内核的头文件里没有声明】（5.10 只有 may_umount）
+ *   ⇒ typeof(path_umount) 失败、且宏会把 KernelSU 自己的声明搅成
+ *     "expected identifier or '('"（CI 实测 run 37403633207）
+ *   ⇒ 改为在 ksu_syms_compat.c 里写【真转发定义】，签名取自 KernelSU 自己的声明 */
+int path_umount(struct path *path, int flags);
 #define __arm64_sys_setns           KSU_SYM(__arm64_sys_setns)
 #define ksys_unshare                KSU_SYM(ksys_unshare)
 #define ns_get_path                 KSU_SYM(ns_get_path)
 #define mntns_operations            KSU_SYM(mntns_operations)
 #define path_get                    KSU_SYM(path_get)
 #define path_mount                  KSU_SYM(path_mount)
-#define path_umount                 KSU_SYM(path_umount)
 #define set_fs_pwd                  KSU_SYM(set_fs_pwd)
 #define dentry_open                 KSU_SYM(dentry_open)
 #define alloc_file_pseudo           KSU_SYM(alloc_file_pseudo)

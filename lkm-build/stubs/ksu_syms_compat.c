@@ -6,6 +6,8 @@
 #include <linux/module.h>
 #include <linux/kallsyms.h>
 #include <linux/string.h>
+#include <linux/errno.h>
+#include <linux/path.h>
 #include "ksu_syms_compat.h"
 
 typedef unsigned long (*ksu_kln_t)(const char *);
@@ -50,3 +52,20 @@ void *ksu_sym_ptr(const char *name)
     return (void *)addr;
 }
 EXPORT_SYMBOL(ksu_sym_ptr);
+
+/* ── ★ 真转发定义：给“内核头文件里没有声明”的符号用 ──────────────────────
+ * 为什么不能也用宏：宏会在【声明处】展开 ⇒ "expected identifier or '('"（CI 实测）。
+ * 这里按 KernelSU 自己的声明写同名定义 ⇒ 声明照旧、链接由运行时解析补齐 ✓
+ */
+int path_umount(struct path *path, int flags)
+{
+    static int (*fn)(struct path *, int);
+
+    if (!fn) {
+        fn = (int (*)(struct path *, int))ksu_sym_ptr("path_umount");
+        if (!fn)
+            return -ENOSYS;
+    }
+    return fn(path, flags);
+}
+EXPORT_SYMBOL(path_umount);

@@ -189,6 +189,21 @@ if ! grep -q 'ksu_syms_compat.h' "$KB"; then
 fi
 echo "  Kbuild 尾部："; tail -4 "$KB"
 
+# ── ★★★ 大代码模型：修 "overflow in relocation type 275"（设备 dmesg 原文）────────
+#   module kernelsu: overflow in relocation type 275 val ffffffc00aa41b98
+# 275 = 0x113 = R_AARCH64_PLT32（表达式 S + A - P，有符号 32 位，范围仅 ±2GiB）。
+# 模块被装载到模块区，而重定位目标在内核高地址（0xfffffc00…），两者相距 > 2GiB
+# ⇒ PC-relative 的 32 位重定位必然溢出 ⇒ 内核 module.c 走 overflow 分支返回 -ENOEXEC。
+# 内核侧不为此重定位生成桩（它只给 R_AARCH64_CALL26/JUMP26 生成模块 PLT），所以只能
+# 从编译器侧消除它：-mcmodel=large 让编译器对全局/函数地址改用 MOVZ/MOVK 绝对寻址
+# （R_AARCH64_MOVW_UABS_G0_NC..G3），不再产生任何 PC-relative 32 位重定位。
+# 远距离直接调用仍由内核模块 PLT 兜底（设备 CONFIG_ARM64_MODULE_PLTS=y）。
+# ★ 只加这一条编译标志，不动其它任何构建逻辑。
+if ! grep -q -- '\-mcmodel=large' "$KB"; then
+  printf '\nccflags-y += -mcmodel=large\n' >> "$KB"
+fi
+echo "  ccflags-y(mcmodel)："; grep -n 'mcmodel' "$KB"
+
 # ── ★ 自检（替代旧的“宏数 ≥ 44”断言）：现在走【真转发定义】路线 ───────────────
 # ① 头文件里不允许再有任何 #define X KSU_SYM(X)（宏路线已废弃）
 if grep -qE '^#define[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+KSU_SYM' "$KSU/kernel/infra/ksu_syms_compat.h"; then

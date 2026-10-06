@@ -188,9 +188,73 @@ if ! grep -q 'ksu_syms_compat.h' "$KB"; then
   printf '\nccflags-y += -include $(src)/infra/ksu_syms_compat.h\n' >> "$KB"
 fi
 echo "  Kbuild 尾部："; tail -4 "$KB"
-MACROS=$(grep -cE '^#define[[:space:]]+\w+[[:space:]]+KSU_SYM' "$KSU/kernel/infra/ksu_syms_compat.h")
-echo "  符号宏数 = $MACROS（应为 44 = 49 - 4 个自有存根 - 1 个无声明(path_umount)）"
-[ "$MACROS" -ge 44 ] || { echo "  !! 宏数不足 45（我自己的 4 个存根函数不宏化），shim 不完整"; exit 1; }
+
+# ── ★ 自检（替代旧的“宏数 ≥ 44”断言）：现在走【真转发定义】路线 ───────────────
+# ① 头文件里不允许再有任何 #define X KSU_SYM(X)（宏路线已废弃）
+if grep -qE '^#define[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+KSU_SYM' "$KSU/kernel/infra/ksu_syms_compat.h"; then
+  echo "  !! 头文件里仍有 #define X KSU_SYM(X) 宏残留，宏路线未清干净"; exit 1
+fi
+# ② 44 个符号每一个都必须在 .c 里有【运行时解析点】（ksu_sym_ptr("名") 或
+#    ksu_sym_ptr 内部的 g_kln("名")——selinux_blob_sizes 因自举不能递归调用）
+SYMS_LIST="__arm64_sys_setns __flush_dcache_area __set_fixmap __tracepoint_sys_enter \
+abort_creds alloc_file_pseudo alloc_uid change_pid commit_creds copy_from_user_nofault \
+copy_to_kernel_nofault copy_to_user_nofault dentry_open ext4_unregister_sysfs groups_alloc \
+groups_free groups_sort init_mm iterate_dir kallsyms_lookup kallsyms_lookup_name \
+kallsyms_lookup_size_offset kernel_read kernel_write ksys_unshare mntns_operations ns_get_path \
+override_creds path_get path_mount prepare_creds revert_creds seccomp_filter_release \
+security_inode_init_security_anon security_release_secctx security_secctx_to_secid \
+security_secid_to_secctx selinux_blob_sizes selinux_state set_fs_pwd set_groups \
+static_key_count strncpy_from_user_nofault task_work_add"
+RESOLVED=0; MISSING=""
+for s in $SYMS_LIST; do
+  if grep -qE "(ksu_sym_ptr|g_kln)\(\"$s\"\)" "$KSU/kernel/infra/ksu_syms_compat.c"; then
+    RESOLVED=$((RESOLVED + 1))
+  else
+    MISSING="$MISSING $s"
+  fi
+done
+echo "  符号运行时解析点 = $RESOLVED（应为 44）"
+[ -z "$MISSING" ] || { echo "  !! 以下符号没有解析点：$MISSING"; exit 1; }
+
+# ── ★ 数据符号使用点改写：不能同名转发，只能在使用处改为调用访问器 ────────────
+# 内核源码树里的真实声明（供签名核对）：
+#   include/linux/mm_types.h:612   extern struct mm_struct init_mm;
+#   include/linux/proc_ns.h:33     extern const struct proc_ns_operations mntns_operations;
+#   security/selinux/include/security.h:113 extern struct selinux_state selinux_state;
+#   include/trace/events/syscalls.h  __tracepoint_sys_enter（DECLARE_TRACE token-paste 生成）
+# 这些符号在内核源码里的用法很少（每个 1-2 个文件），逐个改写并断言：
+echo "== ★ 改写数据符号使用点（同名宏 → 访问器/助手）=="
+PM="$KSU/kernel/hook/arm64/patch_memory.c"
+SM="$KSU/kernel/infra/su_mount_ns.c"
+SC="$KSU/kernel/selinux/selinux.c"
+HM="$KSU/kernel/hook/syscall_hook_manager.c"
+
+# ① init_mm —— phys_from_virt() 里 struct mm_struct *mm = &init_mm;
+sed -i 's/struct mm_struct \*mm = &init_mm;/struct mm_struct *mm = ksu_get_init_mm();/' "$PM"
+grep -q 'ksu_get_init_mm()' "$PM" || { echo "  !! init_mm 改写失败($PM)"; exit 1; }
+
+# ② mntns_operations —— ns_get_path(&ns_path, pid1_task, &mntns_operations);
+sed -i 's/&mntns_operations/ksu_get_mntns_operations()/' "$SM"
+grep -q 'ksu_get_mntns_operations()' "$SM" || { echo "  !! mntns_operations 改写失败($SM)"; exit 1; }
+
+# ③ selinux_state —— setenforce()/getenforce() 里的 selinux_state.xxx（只读/写字段，非类型）
+sed -i 's/\bselinux_state\b/(*ksu_get_selinux_state())/g' "$SC"
+SCN=$(grep -c 'ksu_get_selinux_state()' "$SC")
+[ "$SCN" -ge 3 ] || { echo "  !! selinux_state 改写不足($SC：$SCN 处)"; exit 1; }
+
+# ④ __tracepoint_sys_enter —— register_trace_prio_sys_enter / unregister_trace_sys_enter
+sed -i 's/register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN)/ksu_tp_register_sys_enter(ksu_sys_enter_handler)/' "$HM"
+sed -i 's/unregister_trace_sys_enter(ksu_sys_enter_handler, NULL)/ksu_tp_unregister_sys_enter(ksu_sys_enter_handler)/' "$HM"
+grep -q 'ksu_tp_register_sys_enter' "$HM" || { echo "  !! __tracepoint_sys_enter 注册点改写失败($HM)"; exit 1; }
+grep -q 'ksu_tp_unregister_sys_enter' "$HM" || { echo "  !! __tracepoint_sys_enter 注销点改写失败($HM)"; exit 1; }
+# 改写后，这四个文件里不应再残留对这些内核符号的【直接引用】
+for f in "$PM" "$SM" "$SC" "$HM"; do
+  if grep -nE '[^A-Za-z0-9_](&init_mm|&mntns_operations|[^A-Za-z0-9_]selinux_state\.|register_trace_prio_sys_enter|unregister_trace_sys_enter)' "$f" \
+      | grep -v 'ksu_get_init_mm\|ksu_get_mntns_operations\|ksu_get_selinux_state\|ksu_tp_register_sys_enter\|ksu_tp_unregister_sys_enter'; then
+    echo "  !! $f 里仍有未改写的直连引用（见上）"; exit 1
+  fi
+done
+echo "  数据符号使用点改写完成：patch_memory.c / su_mount_ns.c / selinux.c / syscall_hook_manager.c"
 
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on

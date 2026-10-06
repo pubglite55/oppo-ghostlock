@@ -1,17 +1,35 @@
 /* ksu_syms_compat.h — non-GKI 符号运行时解析（强制包含头）
  * ────────────────────────────────────────────────────────────────────────────
- * 为什么需要它：厂商 SM8475 内核不 EXPORT KernelSU 用到的 49 个核心符号
+ * 为什么需要它：厂商 SM8475 内核不 EXPORT KernelSU 用到的 44 个核心符号
  * （commit_creds / prepare_creds / kallsyms_lookup_name / path_mount / init_mm …），
  * 而且开着 CONFIG_TRIM_UNUSED_KSYMS=y ⇒ 模块硬链接它们 ⇒ finit_module 返回 -ENOENT，
- * 内核打印 "kernelsu: Unknown symbol <名> (err -2)" ×49（实测已见）。
+ * 内核打印 "kernelsu: Unknown symbol <名> (err -2)"（实测已见）。
  *
  * 但设备内核同时具备：
  *   CONFIG_KPROBES=y  +  CONFIG_KALLSYMS_ALL=y  +  /proc/kallsyms 651630 行
  * ⇒ 这些符号【都存在，只是没导出】⇒ 可在运行时解析（non-GKI 的标准做法）。
  *
- * 手法：register_kprobe() 内部按名字查符号表 ⇒ 连未导出的 kallsyms_lookup_name 都能拿到；
- * 再用它解析其余符号。宏用 typeof(原声明) 取类型 ⇒ 函数与数据符号统一写法；
- * #define X KSU_SYM(X) 里内层的 X 会被预处理器 blue-paint 掉、不再展开 ⇒ 不递归 ✓。
+ * ★ 为什么不再用 #define X KSU_SYM(X) 宏路线（CI 连挂 3 次）：
+ *   对象宏会在【声明处】也展开。KernelSU 强制包含本头，而内核的声明可能在
+ *   本头之后才被解析 ⇒ 声明被搅成 "expected identifier or '('"：
+ *     · asm/cacheflush.h:66  __flush_dcache_area（宏展开命中声明）
+ *     · include/trace/events/syscalls.h:18  __tracepoint_sys_enter
+ *       —— 它由 TRACE_EVENT_FN→DECLARE_TRACE→__DECLARE_TRACE 的
+ *          __tracepoint_##name【token pasting】生成；粘贴结果会被再扫描并命中宏，
+ *          连“先包含声明头”都救不了 ⇒ 宏对数据符号彻底不可行。
+ *
+ * ★ 现在的路线（真转发定义）：
+ *   · 【函数符号】在 ksu_syms_compat.c 里写【同名】转发定义（首次调用用
+ *     ksu_sym_ptr("名字") 解析并存进 static 函数指针）⇒ 模块内部自解析，
+ *     内核侧不再有未定义引用 ⇒ finit_module 不再 ENOENT。签名全部取自
+ *     【内核源码树里的真实原型】（grep include/ 得到），保证 CFI 类型哈希一致。
+ *   · 【数据符号】是对象、不能用同名转发定义（身份/可变性要求它们就是内核那一个）：
+ *       - init_mm / mntns_operations / selinux_state → 不同名访问器 ksu_get_*(),
+ *         由 build-lkm.sh 在【少数使用点】改写源码调用访问器；
+ *       - selinux_blob_sizes → 同名对象 + 首次解析时从内核对象 memcpy 一次
+ *         （lsm_blob_sizes 在启动后不再变化，值拷贝是正确的）；
+ *       - __tracepoint_sys_enter → 提供注册/注销助手 ksu_tp_*_sys_enter()，
+ *         同样由 build-lkm.sh 改写 syscall_hook_manager.c 的两个调用点。
  */
 #ifndef _KSU_SYMS_COMPAT_H
 #define _KSU_SYMS_COMPAT_H
@@ -42,10 +60,6 @@
 #include <linux/unistd.h>
 #include <linux/task_work.h>
 #include <linux/version.h>
-/* ★ 关键：凡是【声明着我要宏化的符号】的头，都必须在这里【先】包含进来。
- * 否则那些声明会在宏定义【之后】才被解析 ⇒ 被宏展开搅成
- * "expected identifier or '('"（CI 实测：path_umount、__flush_dcache_area）。
- * 有 include guard 的头的重复包含是 no-op ✓，所以多列不亏。 */
 #include <asm/cacheflush.h>
 #include <asm/fixmap.h>
 #include <asm/memory.h>
@@ -66,84 +80,37 @@
 #include <linux/mount.h>
 #include <linux/fdtable.h>
 
+/* ── 运行期解析器本体：按名字查 kallsyms（未导出符号也能拿到）────────────── */
 void *ksu_sym_ptr(const char *name);
 
-/* ★ typeof(n) = 原声明给出的真实类型 ⇒ 函数退化成函数指针、数据退化成对象指针，统一解引用。
- *   KSU_SYM 本体必须在这里定义（第一版漏了它 ⇒ CI 报 "implicit declaration of function 'KSU_SYM'" ✗）。
- *   #define X KSU_SYM(X) 的内层 X 会被预处理器 blue-paint ⇒ 不递归 ✓ */
-void *ksu_sym_ptr(const char *name);
-#define KSU_SYM(n) (*(typeof(n) *)ksu_sym_ptr(#n))
+/* ── 数据符号访问器（不同名）───────────────────────────────────────────────
+ * 这几个是【对象】而非函数，内核头用 extern 声明它们，且
+ *   · init_mm   —— 代码要拿它的【真实地址】走页表（phys_from_virt）
+ *   · mntns_operations —— ns_get_path() 传的是它的地址，身份必须与内核一致
+ *   · selinux_state    —— setenforce/getenforce 必须改到内核那一个对象
+ * 因此不能同名转发，只能在少数使用点改用访问器。
+ * 这里的 struct 都用【前置声明】即可（只用到指针）。 */
+struct mm_struct;
+struct selinux_state;
+struct proc_ns_operations;
+struct pt_regs;
+struct tracepoint;
 
-/* —— 凭据/身份（KernelSU root 与 su 交接的核心路径）—— */
-#define commit_creds                KSU_SYM(commit_creds)
-#define prepare_creds               KSU_SYM(prepare_creds)
-#define override_creds              KSU_SYM(override_creds)
-#define revert_creds                KSU_SYM(revert_creds)
-#define abort_creds                 KSU_SYM(abort_creds)
-#define set_groups                  KSU_SYM(set_groups)
-#define groups_alloc                KSU_SYM(groups_alloc)
-#define groups_free                 KSU_SYM(groups_free)
-#define groups_sort                 KSU_SYM(groups_sort)
-#define alloc_uid                   KSU_SYM(alloc_uid)
+struct mm_struct *ksu_get_init_mm(void);
+const struct proc_ns_operations *ksu_get_mntns_operations(void);
+struct selinux_state *ksu_get_selinux_state(void);
 
-/* —— kallsyms —— */
-#define kallsyms_lookup             KSU_SYM(kallsyms_lookup)
-#define kallsyms_lookup_name        KSU_SYM(kallsyms_lookup_name)
-#define kallsyms_lookup_size_offset KSU_SYM(kallsyms_lookup_size_offset)
+/* ── __tracepoint_sys_enter 的注册/注销助手 ────────────────────────────────
+ * __tracepoint_sys_enter 是 struct tracepoint 对象；它在 DECLARE_TRACE() 里被
+ * __tracepoint_##name 的 token-pasting 引用 ⇒ 宏无法安全改写（CI 实测），
+ * 只能在 syscall_hook_manager.c 的两个调用点改用这两个助手。
+ * probe 签名与内核 register_trace_prio_sys_enter 的 data_proto 一致。 */
+int ksu_tp_register_sys_enter(void (*probe)(void *, struct pt_regs *, long));
+int ksu_tp_unregister_sys_enter(void (*probe)(void *, struct pt_regs *, long));
 
-/* —— 命名空间 / 路径（su 的 mount ns 交接）——
- * ★ path_umount 在【本颗内核的头文件里没有声明】（5.10 只有 may_umount）
- *   ⇒ typeof(path_umount) 失败、且宏会把 KernelSU 自己的声明搅成
- *     "expected identifier or '('"（CI 实测 run 37403633207）
- *   ⇒ 改为在 ksu_syms_compat.c 里写【真转发定义】，签名取自 KernelSU 自己的声明 */
+/* ── path_umount：本颗内核头文件里没有声明（5.10 只有 may_umount）───────
+ * 不能 typeof()、宏又会搅坏 KernelSU 自己的声明 ⇒ 在 .c 里写【真转发定义】，
+ * 签名取自 KernelSU 自己的声明。 */
 int path_umount(struct path *path, int flags);
-#define __arm64_sys_setns           KSU_SYM(__arm64_sys_setns)
-#define ksys_unshare                KSU_SYM(ksys_unshare)
-#define ns_get_path                 KSU_SYM(ns_get_path)
-#define mntns_operations            KSU_SYM(mntns_operations)
-#define path_get                    KSU_SYM(path_get)
-#define path_mount                  KSU_SYM(path_mount)
-#define set_fs_pwd                  KSU_SYM(set_fs_pwd)
-#define dentry_open                 KSU_SYM(dentry_open)
-#define alloc_file_pseudo           KSU_SYM(alloc_file_pseudo)
-#define iterate_dir                 KSU_SYM(iterate_dir)
 
-/* —— 进程 / 任务 —— */
-#define change_pid                  KSU_SYM(change_pid)
-#define task_work_add               KSU_SYM(task_work_add)
-#define seccomp_filter_release      KSU_SYM(seccomp_filter_release)
-
-/* —— 内核内存 / 架构 —— */
-#define init_mm                     KSU_SYM(init_mm)
-#define __flush_dcache_area         KSU_SYM(__flush_dcache_area)
-#define __set_fixmap                KSU_SYM(__set_fixmap)
-
-/* —— 内核读写 —— */
-#define kernel_read                 KSU_SYM(kernel_read)
-#define kernel_write                KSU_SYM(kernel_write)
-#define copy_from_user_nofault      KSU_SYM(copy_from_user_nofault)
-#define copy_to_user_nofault        KSU_SYM(copy_to_user_nofault)
-#define copy_to_kernel_nofault      KSU_SYM(copy_to_kernel_nofault)
-#define strncpy_from_user_nofault   KSU_SYM(strncpy_from_user_nofault)
-
-/* —— LSM / SELinux —— */
-#define security_secid_to_secctx    KSU_SYM(security_secid_to_secctx)
-#define security_secctx_to_secid    KSU_SYM(security_secctx_to_secid)
-#define security_release_secctx     KSU_SYM(security_release_secctx)
-#define security_inode_init_security_anon KSU_SYM(security_inode_init_security_anon)
-#define selinux_state               KSU_SYM(selinux_state)
-#define selinux_blob_sizes          KSU_SYM(selinux_blob_sizes)
-
-/* —— tracepoint / 静态键 —— */
-#define __tracepoint_sys_enter      KSU_SYM(__tracepoint_sys_enter)
-#define static_key_count            KSU_SYM(static_key_count)
-
-/* —— 文件系统 —— */
-#define ext4_unregister_sysfs       KSU_SYM(ext4_unregister_sysfs)
-
-/* —— 我自己的存根函数【不宏化】——
- * 内核 Unknown-symbol 名单里出现过 handle_sepolicy / ksu_selinux_hide_handle_* 这 4 个，
- * 但它们是我自己 stubs/ 里【定义】的；一旦宏化，它们的函数声明会被展开成
- * "function cannot return function type"（CI 实测），而且根本不需要运行时解析 ✓。
- * 若内核仍报 Unknown，说明是别处声明了同名弱引用——那时再按情况处理。 */
 #endif /* _KSU_SYMS_COMPAT_H */

@@ -70,8 +70,8 @@ Makefile:548: MSM_ARCH: --
   WRAP    arch/arm64/include/generated/uapi/asm/errno.h
   WRAP    arch/arm64/include/generated/uapi/asm/ioctl.h
   WRAP    arch/arm64/include/generated/uapi/asm/ioctls.h
-  WRAP    arch/arm64/include/generated/uapi/asm/ipcbuf.h
   WRAP    arch/arm64/include/generated/uapi/asm/msgbuf.h
+  WRAP    arch/arm64/include/generated/uapi/asm/ipcbuf.h
   WRAP    arch/arm64/include/generated/uapi/asm/poll.h
   WRAP    arch/arm64/include/generated/uapi/asm/resource.h
   WRAP    arch/arm64/include/generated/uapi/asm/sembuf.h
@@ -87,11 +87,11 @@ Makefile:548: MSM_ARCH: --
   HOSTCC  scripts/dtc/dtc.o
   HOSTCC  scripts/dtc/flattree.o
   UPD     include/config/kernel.release
-  HOSTCC  scripts/dtc/fstree.o
   WRAP    arch/arm64/include/generated/asm/early_ioremap.h
   WRAP    arch/arm64/include/generated/asm/mcs_spinlock.h
   WRAP    arch/arm64/include/generated/asm/qrwlock.h
   WRAP    arch/arm64/include/generated/asm/qspinlock.h
+  HOSTCC  scripts/dtc/fstree.o
   WRAP    arch/arm64/include/generated/asm/set_memory.h
   WRAP    arch/arm64/include/generated/asm/user.h
   WRAP    arch/arm64/include/generated/asm/bugs.h
@@ -119,22 +119,22 @@ Makefile:548: MSM_ARCH: --
   HOSTCC  scripts/dtc/livetree.o
   UPD     include/generated/utsrelease.h
   HOSTCC  scripts/dtc/treesource.o
-  HOSTCC  scripts/unifdef
   HOSTCC  scripts/dtc/srcpos.o
+  HOSTCC  scripts/unifdef
   HOSTCC  scripts/dtc/checks.o
   HOSTCC  scripts/dtc/util.o
   LEX     scripts/dtc/dtc-lexer.lex.c
   YACC    scripts/dtc/dtc-parser.tab.[ch]
   HOSTCC  scripts/dtc/yamltree.o
-  HOSTCC  scripts/dtc/dtc-lexer.lex.o
   HDRINST usr/include/asm-generic/mman.h
   HDRINST usr/include/asm-generic/sembuf.h
-  HOSTCC  scripts/dtc/dtc-parser.tab.o
   HDRINST usr/include/asm-generic/ipcbuf.h
   HDRINST usr/include/asm-generic/posix_types.h
   HDRINST usr/include/asm-generic/bitsperlong.h
+  HOSTCC  scripts/dtc/dtc-lexer.lex.o
   HDRINST usr/include/asm-generic/types.h
   HDRINST usr/include/asm-generic/termios.h
+  HOSTCC  scripts/dtc/dtc-parser.tab.o
   HDRINST usr/include/asm-generic/errno-base.h
   HDRINST usr/include/asm-generic/termbits.h
   HDRINST usr/include/asm-generic/stat.h
@@ -162,7 +162,6 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/asm-generic/msgbuf.h
   HDRINST usr/include/asm-generic/poll.h
   HDRINST usr/include/asm-generic/ucontext.h
-  HOSTLD  scripts/dtc/dtc
   HDRINST usr/include/asm-generic/siginfo.h
   HDRINST usr/include/asm-generic/sockios.h
   HDRINST usr/include/drm/vc4_drm.h
@@ -174,59 +173,60 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/drm/armada_drm.h
   HDRINST usr/include/drm/drm_sarea.h
   HDRINST usr/include/drm/lima_drm.h
+  HOSTLD  scripts/dtc/dtc
   HDRINST usr/include/drm/nouveau_drm.h
   HDRINST usr/include/drm/etnaviv_drm.h
-  HOSTCC  scripts/kallsyms
-  HOSTCC  scripts/genksyms/genksyms.o
   HDRINST usr/include/drm/drm.h
-  HOSTCC  scripts/selinux/genheaders/genheaders
   HDRINST usr/include/drm/amdgpu_drm.h
   HDRINST usr/include/drm/vmwgfx_drm.h
   HDRINST usr/include/drm/panfrost_drm.h
   HDRINST usr/include/drm/radeon_drm.h
   HDRINST usr/include/drm/omap_drm.h
   HDRINST usr/include/drm/sis_drm.h
-  HOSTCC  scripts/selinux/mdp/mdp
+  HOSTCC  scripts/kallsyms
   HDRINST usr/include/drm/via_drm.h
+  HOSTCC  scripts/genksyms/genksyms.o
+  HOSTCC  scripts/selinux/genheaders/genheaders
   HDRINST usr/include/drm/vgem_drm.h
   HDRINST usr/include/drm/i915_drm.h
-  YACC    scripts/genksyms/parse.tab.[ch]
   HDRINST usr/include/drm/v3d_drm.h
   HDRINST usr/include/drm/drm_fourcc.h
-  HOSTCC  scripts/sorttable
   HDRINST usr/include/drm/exynos_drm.h
   HDRINST usr/include/drm/r128_drm.h
-  LEX     scripts/genksyms/lex.lex.c
+  HOSTCC  scripts/selinux/mdp/mdp
   HDRINST usr/include/drm/virtgpu_drm.h
   HDRINST usr/include/drm/qxl_drm.h
-  HOSTCC  scripts/asn1_compiler
   HDRINST usr/include/drm/i810_drm.h
   HDRINST usr/include/linux/mman.h
   HDRINST usr/include/linux/tty.h
-  HOSTCC  scripts/genksyms/parse.tab.o
+  YACC    scripts/genksyms/parse.tab.[ch]
   HDRINST usr/include/linux/netfilter_arp.h
   HDRINST usr/include/linux/in.h
   HDRINST usr/include/linux/pcitest.h
   HDRINST usr/include/linux/virtio_ids.h
+  LEX     scripts/genksyms/lex.lex.c
   HDRINST usr/include/linux/nfs2.h
+  HOSTCC  scripts/sorttable
   HDRINST usr/include/linux/uhid.h
+  HOSTCC  scripts/asn1_compiler
   HDRINST usr/include/linux/if_vlan.h
   HDRINST usr/include/linux/kernel-page-flags.h
   HDRINST usr/include/linux/quota.h
   HDRINST usr/include/linux/netfilter.h
   HDRINST usr/include/linux/timerfd.h
   HDRINST usr/include/linux/bpf.h
-  HOSTCC  scripts/genksyms/lex.lex.o
+  HOSTCC  scripts/genksyms/parse.tab.o
   HDRINST usr/include/linux/kexec.h
   HDRINST usr/include/linux/nfs3.h
   HDRINST usr/include/linux/hdlc.h
-  HOSTCC  scripts/extract-cert
   HDRINST usr/include/linux/lp.h
   HDRINST usr/include/linux/vfio_zdev.h
+  HOSTCC  scripts/genksyms/lex.lex.o
   HDRINST usr/include/linux/sem.h
   HDRINST usr/include/linux/blkzoned.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_mark_m.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_ip.h
+  HOSTCC  scripts/extract-cert
   HDRINST usr/include/linux/netfilter_bridge/ebt_redirect.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_arpreply.h
   HDRINST usr/include/linux/netfilter_bridge/ebt_arp.h
@@ -259,18 +259,18 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/pr.h
   HDRINST usr/include/linux/atmsap.h
   HDRINST usr/include/linux/cgroupstats.h
-  HOSTLD  scripts/genksyms/genksyms
   HDRINST usr/include/linux/adfs_fs.h
   HDRINST usr/include/linux/posix_types.h
   HDRINST usr/include/linux/pfkeyv2.h
   HDRINST usr/include/linux/openat2.h
-  HDRINST usr/include/linux/if_pppol2tp.h
   HDRINST usr/include/linux/ethtool_netlink.h
+  HDRINST usr/include/linux/if_pppol2tp.h
   HDRINST usr/include/linux/ipv6_route.h
   HDRINST usr/include/linux/cycx_cfm.h
   HDRINST usr/include/linux/types.h
   HDRINST usr/include/linux/vbox_err.h
   HDRINST usr/include/linux/if_ether.h
+  HOSTLD  scripts/genksyms/genksyms
   HDRINST usr/include/linux/edd.h
   HDRINST usr/include/linux/media.h
   HDRINST usr/include/linux/fuse.h
@@ -294,8 +294,11 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/rpl_iptunnel.h
   HDRINST usr/include/linux/helioscom_interface.h
   HDRINST usr/include/linux/timex.h
+  CC      scripts/mod/empty.o
   HDRINST usr/include/linux/vt.h
+  HOSTCC  scripts/mod/mk_elfconfig
   HDRINST usr/include/linux/veth.h
+  CC      scripts/mod/devicetable-offsets.s
   HDRINST usr/include/linux/phantom.h
   HDRINST usr/include/linux/netfilter_bridge.h
   HDRINST usr/include/linux/qrtr.h
@@ -307,12 +310,14 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/can/netlink.h
   HDRINST usr/include/linux/can/bcm.h
   HDRINST usr/include/linux/can/gw.h
+  UPD     scripts/mod/devicetable-offsets.h
+  MKELF   scripts/mod/elfconfig.h
   HDRINST usr/include/linux/can/vxcan.h
   HDRINST usr/include/linux/can/j1939.h
-  CC      scripts/mod/empty.o
-  HOSTCC  scripts/mod/mk_elfconfig
+  HOSTCC  scripts/mod/modpost.o
+  HOSTCC  scripts/mod/file2alias.o
   HDRINST usr/include/linux/atm_nicstar.h
-  CC      scripts/mod/devicetable-offsets.s
+  HOSTCC  scripts/mod/sumversion.o
   HDRINST usr/include/linux/firewire-cdev.h
   HDRINST usr/include/linux/rseq.h
   HDRINST usr/include/linux/openvswitch.h
@@ -320,14 +325,9 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/hw_breakpoint.h
   HDRINST usr/include/linux/lwtunnel.h
   HDRINST usr/include/linux/auto_dev-ioctl.h
-  MKELF   scripts/mod/elfconfig.h
-  HDRINST usr/include/linux/unix_diag.h
   HDRINST usr/include/linux/keyboard.h
-  UPD     scripts/mod/devicetable-offsets.h
-  HOSTCC  scripts/mod/modpost.o
-  HOSTCC  scripts/mod/file2alias.o
+  HDRINST usr/include/linux/unix_diag.h
   HDRINST usr/include/linux/v4l2-controls.h
-  HOSTCC  scripts/mod/sumversion.o
   HDRINST usr/include/linux/sched.h
   HDRINST usr/include/linux/dma-heap.h
   HDRINST usr/include/linux/atm_idt77105.h
@@ -395,8 +395,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_frag.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_hl.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_REJECT.h
-  HDRINST usr/include/linux/netfilter_ipv6/ip6t_NPT.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_ipv6header.h
+  HDRINST usr/include/linux/netfilter_ipv6/ip6t_NPT.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_opts.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_mh.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_srh.h
@@ -405,7 +405,6 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_rt.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_ah.h
   HDRINST usr/include/linux/netfilter_ipv6/ip6t_HL.h
-  HOSTLD  scripts/mod/modpost
   HDRINST usr/include/linux/kcm.h
   HDRINST usr/include/linux/switchtec_ioctl.h
   HDRINST usr/include/linux/reiserfs_xattr.h
@@ -413,30 +412,29 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/nfsd/nfsfh.h
   HDRINST usr/include/linux/nfsd/cld.h
   HDRINST usr/include/linux/nfsd/debug.h
+  HOSTLD  scripts/mod/modpost
   HDRINST usr/include/linux/nfsd/stats.h
   HDRINST usr/include/linux/nfsd/export.h
   HDRINST usr/include/linux/selinux_netlink.h
   HDRINST usr/include/linux/ptp_clock.h
-  CC      kernel/bounds.s
   HDRINST usr/include/linux/x25.h
-  UPD     include/generated/timeconst.h
   HDRINST usr/include/linux/bcm933xx_hcs.h
   HDRINST usr/include/linux/qrng.h
-  CALL    scripts/atomic/check-atomics.sh
   HDRINST usr/include/linux/loop.h
   HDRINST usr/include/linux/nfs.h
   HDRINST usr/include/linux/arm_sdei.h
   HDRINST usr/include/linux/acct.h
   HDRINST usr/include/linux/hyperv.h
+  CC      kernel/bounds.s
+  CALL    scripts/atomic/check-atomics.sh
   HDRINST usr/include/linux/nl80211.h
+  UPD     include/generated/timeconst.h
   HDRINST usr/include/linux/if_x25.h
   HDRINST usr/include/linux/utime.h
   HDRINST usr/include/linux/kvm_para.h
   HDRINST usr/include/linux/kernelcapi.h
   HDRINST usr/include/linux/auto_fs4.h
   HDRINST usr/include/linux/ife.h
-  UPD     include/generated/bounds.h
-  CC      arch/arm64/kernel/asm-offsets.s
   HDRINST usr/include/linux/if_team.h
   HDRINST usr/include/linux/virtio_pci.h
   HDRINST usr/include/linux/eventpoll.h
@@ -446,8 +444,10 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/tc_act/tc_tunnel_key.h
   HDRINST usr/include/linux/tc_act/tc_ife.h
   HDRINST usr/include/linux/tc_act/tc_skbedit.h
+  UPD     include/generated/bounds.h
   HDRINST usr/include/linux/tc_act/tc_mirred.h
   HDRINST usr/include/linux/tc_act/tc_mpls.h
+  CC      arch/arm64/kernel/asm-offsets.s
   HDRINST usr/include/linux/tc_act/tc_pedit.h
   HDRINST usr/include/linux/tc_act/tc_csum.h
   HDRINST usr/include/linux/tc_act/tc_defact.h
@@ -501,8 +501,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/dlm_netlink.h
   HDRINST usr/include/linux/thermal.h
   HDRINST usr/include/linux/smcinvoke.h
-  HDRINST usr/include/linux/wireguard.h
   HDRINST usr/include/linux/sound.h
+  HDRINST usr/include/linux/wireguard.h
   HDRINST usr/include/linux/if_hippi.h
   HDRINST usr/include/linux/netfilter_arp/arpt_mangle.h
   HDRINST usr/include/linux/netfilter_arp/arp_tables.h
@@ -511,8 +511,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/wimax/i2400m.h
   HDRINST usr/include/linux/fd.h
   HDRINST usr/include/linux/msg.h
-  HDRINST usr/include/linux/mptcp.h
   HDRINST usr/include/linux/icmp.h
+  HDRINST usr/include/linux/mptcp.h
   HDRINST usr/include/linux/fcntl.h
   HDRINST usr/include/linux/dlmconstants.h
   HDRINST usr/include/linux/icmpv6.h
@@ -560,9 +560,7 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/wil6210_uapi.h
   HDRINST usr/include/linux/ipx.h
   HDRINST usr/include/linux/rose.h
-  UPD     include/generated/asm-offsets.h
   HDRINST usr/include/linux/nfs_mount.h
-  CALL    scripts/checksyscalls.sh
   HDRINST usr/include/linux/agpgart.h
   HDRINST usr/include/linux/netlink_diag.h
   HDRINST usr/include/linux/sysctl.h
@@ -577,13 +575,9 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/psample.h
   HDRINST usr/include/linux/mpls_iptunnel.h
   HDRINST usr/include/linux/nfs4_mount.h
-  LDS     arch/arm64/kernel/vdso/vdso.lds
   HDRINST usr/include/linux/dm-user.h
   HDRINST usr/include/linux/gen_stats.h
-  CC      arch/arm64/kernel/vdso/vgettimeofday.o
   HDRINST usr/include/linux/fsl_hypervisor.h
-  AS      arch/arm64/kernel/vdso/note.o
-  AS      arch/arm64/kernel/vdso/sigreturn.o
   HDRINST usr/include/linux/ip.h
   HDRINST usr/include/linux/i2o-dev.h
   HDRINST usr/include/linux/adb.h
@@ -607,10 +601,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/msm_ipa.h
   HDRINST usr/include/linux/vsockmon.h
   HDRINST usr/include/linux/time_types.h
-  LD      arch/arm64/kernel/vdso/vdso.so.dbg
   HDRINST usr/include/linux/if_arcnet.h
   HDRINST usr/include/linux/netconf.h
-  VDSOSYM include/generated/vdso-offsets.h
   HDRINST usr/include/linux/watchdog.h
   HDRINST usr/include/linux/audit.h
   HDRINST usr/include/linux/batadv_packet.h
@@ -623,7 +615,9 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/hdreg.h
   HDRINST usr/include/linux/toshiba.h
   HDRINST usr/include/linux/msm_geni_serial.h
+  UPD     include/generated/asm-offsets.h
   HDRINST usr/include/linux/dm-log-userspace.h
+  CALL    scripts/checksyscalls.sh
   HDRINST usr/include/linux/qbt_handler.h
   HDRINST usr/include/linux/ion.h
   HDRINST usr/include/linux/cuda.h
@@ -638,9 +632,13 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/cdrom.h
   HDRINST usr/include/linux/tcp_metrics.h
   HDRINST usr/include/linux/vfio_ccw.h
+  LDS     arch/arm64/kernel/vdso/vdso.lds
   HDRINST usr/include/linux/auxvec.h
+  CC      arch/arm64/kernel/vdso/vgettimeofday.o
   HDRINST usr/include/linux/signal.h
+  AS      arch/arm64/kernel/vdso/note.o
   HDRINST usr/include/linux/hash_info.h
+  AS      arch/arm64/kernel/vdso/sigreturn.o
   HDRINST usr/include/linux/msm_ion.h
   HDRINST usr/include/linux/phonet.h
   HDRINST usr/include/linux/shm.h
@@ -657,20 +655,18 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/sctp.h
   HDRINST usr/include/linux/atm_tcp.h
   HDRINST usr/include/linux/sock_diag.h
-  LDS     arch/arm64/kernel/vdso32/vdso.lds
   HDRINST usr/include/linux/if_frad.h
-  CC32    arch/arm64/kernel/vdso32/note.o
-  CC32    arch/arm64/kernel/vdso32/vgettimeofday.o
   HDRINST usr/include/linux/perf_event.h
   HDRINST usr/include/linux/resource.h
-  HOSTCC  arch/arm64/kernel/vdso32/../../../arm/vdso/vdsomunge
   HDRINST usr/include/linux/iso_fs.h
   HDRINST usr/include/linux/watch_queue.h
+  LD      arch/arm64/kernel/vdso/vdso.so.dbg
   HDRINST usr/include/linux/vm_sockets_diag.h
   HDRINST usr/include/linux/fiemap.h
   HDRINST usr/include/linux/byteorder/big_endian.h
   HDRINST usr/include/linux/byteorder/little_endian.h
   HDRINST usr/include/linux/affs_hardblocks.h
+  VDSOSYM include/generated/vdso-offsets.h
   HDRINST usr/include/linux/btf.h
   HDRINST usr/include/linux/input-event-codes.h
   HDRINST usr/include/linux/virtio_gpu.h
@@ -678,8 +674,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/nitro_enclaves.h
   HDRINST usr/include/linux/hidraw.h
   HDRINST usr/include/linux/oom.h
-  HDRINST usr/include/linux/kfd_ioctl.h
   HDRINST usr/include/linux/sed-opal.h
+  HDRINST usr/include/linux/kfd_ioctl.h
   HDRINST usr/include/linux/atm_eni.h
   HDRINST usr/include/linux/msm_rmnet.h
   HDRINST usr/include/linux/fadvise.h
@@ -688,18 +684,15 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/nvram.h
   HDRINST usr/include/linux/stddef.h
   HDRINST usr/include/linux/isdn/capicmd.h
-  LD32    arch/arm64/kernel/vdso32/vdso.so.raw
   HDRINST usr/include/linux/gpio.h
   HDRINST usr/include/linux/ppp_defs.h
   HDRINST usr/include/linux/ip6_tunnel.h
-  MUNGE   arch/arm64/kernel/vdso32/vdso.so.dbg
   HDRINST usr/include/linux/msm_sysstats.h
   HDRINST usr/include/linux/ip_vs.h
   HDRINST usr/include/linux/omapfb.h
   HDRINST usr/include/linux/rmnet_ipa_fd_ioctl.h
   HDRINST usr/include/linux/serial_reg.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_TTL.h
-  VDSOSYM include/generated/vdso32-offsets.h
   HDRINST usr/include/linux/netfilter_ipv4/ip_tables.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_LOG.h
   HDRINST usr/include/linux/netfilter_ipv4/ipt_CLUSTERIP.h
@@ -718,8 +711,12 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/wimax.h
   HDRINST usr/include/linux/sonet.h
   HDRINST usr/include/linux/iommu.h
+  LDS     arch/arm64/kernel/vdso32/vdso.lds
   HDRINST usr/include/linux/psci.h
+  CC32    arch/arm64/kernel/vdso32/note.o
   HDRINST usr/include/linux/virtio_input.h
+  CC32    arch/arm64/kernel/vdso32/vgettimeofday.o
+  HOSTCC  arch/arm64/kernel/vdso32/../../../arm/vdso/vdsomunge
   HDRINST usr/include/linux/soundcard.h
   HDRINST usr/include/linux/can.h
   HDRINST usr/include/linux/media-bus-format.h
@@ -751,12 +748,15 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/cyclades.h
   HDRINST usr/include/linux/atmsvc.h
   HDRINST usr/include/linux/tty_flags.h
+  LD32    arch/arm64/kernel/vdso32/vdso.so.raw
   HDRINST usr/include/linux/dvb/osd.h
   HDRINST usr/include/linux/dvb/audio.h
   HDRINST usr/include/linux/dvb/video.h
+  MUNGE   arch/arm64/kernel/vdso32/vdso.so.dbg
   HDRINST usr/include/linux/dvb/dmx.h
   HDRINST usr/include/linux/dvb/frontend.h
   HDRINST usr/include/linux/dvb/ca.h
+  VDSOSYM include/generated/vdso32-offsets.h
   HDRINST usr/include/linux/dvb/net.h
   HDRINST usr/include/linux/dvb/version.h
   HDRINST usr/include/linux/atmppp.h
@@ -940,8 +940,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/linux/netfilter/xt_TPROXY.h
   HDRINST usr/include/linux/netfilter/xt_tcpudp.h
   HDRINST usr/include/linux/netfilter/xt_LOG.h
-  HDRINST usr/include/linux/netfilter/xt_ecn.h
   HDRINST usr/include/linux/netfilter/xt_string.h
+  HDRINST usr/include/linux/netfilter/xt_ecn.h
   HDRINST usr/include/linux/netfilter/xt_SECMARK.h
   HDRINST usr/include/linux/netfilter/xt_rateest.h
   HDRINST usr/include/linux/netfilter/nfnetlink_log.h
@@ -1015,8 +1015,8 @@ Makefile:548: MSM_ARCH: --
   HDRINST usr/include/misc/ocxl.h
   HDRINST usr/include/misc/habanalabs.h
   HDRINST usr/include/mtd/inftl-user.h
-  HDRINST usr/include/mtd/mtd-user.h
   HDRINST usr/include/mtd/ubi-user.h
+  HDRINST usr/include/mtd/mtd-user.h
   HDRINST usr/include/mtd/nftl-user.h
   HDRINST usr/include/mtd/mtd-abi.h
   HDRINST usr/include/rdma/rdma_user_ioctl_cmds.h
@@ -1132,6 +1132,8 @@ Makefile:548: MSM_ARCH: --
   CC      fs/aio.o
   CC      fs/locks.o
   CC      fs/binfmt_misc.o
+  CC      kernel/kheaders.o
+  AR      kernel/built-in.a
   CC      fs/binfmt_script.o
   CC      fs/binfmt_elf.o
   CC      fs/compat_binfmt_elf.o
@@ -1141,8 +1143,6 @@ Makefile:548: MSM_ARCH: --
   CC      fs/drop_caches.o
   CC      fs/dcookies.o
   AR      fs/built-in.a
-  CC      kernel/kheaders.o
-  AR      kernel/built-in.a
 !! vmlinux build failed - continuing (module will still ENOENT on load)
 !! Module.symvers still missing - modpost will not validate symbols
 == generate the SELinux generated headers (module-only builds skip them) ==
@@ -1171,8 +1171,8 @@ Makefile:548: MSM_ARCH: --
   CC      security/selinux/ss/context.o
   CC      security/selinux/vendor_hooks.o
   AR      security/selinux/built-in.a
--rw-r--r-- 1 runner runner 104050 Oct  6 01:58 security/selinux/av_permissions.h
--rw-r--r-- 1 runner runner   8413 Oct  6 01:58 security/selinux/flask.h
+-rw-r--r-- 1 runner runner 104050 Oct  6 02:12 security/selinux/av_permissions.h
+-rw-r--r-- 1 runner runner   8413 Oct  6 02:12 security/selinux/flask.h
 == replace feature/selinux_hide.c with the no-SELinux-internals stub ==
   stub in place, no SELinux-internal references in code
 == replace kernel/selinux/{sepolicy.c,rules.c} with internals-free stubs ==
@@ -1197,29 +1197,138 @@ Makefile:548: MSM_ARCH: --
   CC [M]  /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.o
   CC [M]  /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sulog.o
   CC [M]  /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.o
-In file included from <built-in>:4:
-/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:35:10: fatal error: 'linux/groups.h' file not found
-#include <linux/groups.h>
-         ^~~~~~~~~~~~~~~~
-In file included from <built-in>:4:
-/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:35:10: fatal error: 'linux/groups.h' file not found
-#include <linux/groups.h>
-         ^~~~~~~~~~~~~~~~
-In file included from <built-in>:4:
-/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:35:10: fatal error: 'linux/groups.h' file not found
-#include <linux/groups.h>
-         ^~~~~~~~~~~~~~~~
-In file included from <built-in>:4:
-/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:35:10: fatal error: 'linux/groups.h' file not found
-#include <linux/groups.h>
-         ^~~~~~~~~~~~~~~~
-1 error generated.
-1 error generated.
-make[1]: *** [scripts/Makefile.build:285: /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sulog.o] Error 1
-make[1]: *** Waiting for unfinished jobs....
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.c:17:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/selinux/selinux.h:34:5: error: function cannot return function type 'int (void *, u64)' (aka 'int (void *, unsigned long long)')
+int handle_sepolicy(void __user *user_data, u64 data_len);
+    ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:114:61: note: expanded from macro 'handle_sepolicy'
+#define handle_sepolicy                              KSU_SYM(handle_sepolicy)
+                                                            ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.c:17:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/selinux/selinux.h:34:5: error: a parameter list without types is only allowed in a function definition
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:114:62: note: expanded from macro 'handle_sepolicy'
+#define handle_sepolicy                              KSU_SYM(handle_sepolicy)
+                                                             ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.c:67:12: error: function cannot return function type 'int (struct path *, int)'
+extern int path_umount(struct path *path, int flags);
+           ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:74:44: note: expanded from macro 'path_umount'
+#define path_umount                 KSU_SYM(path_umount)
+                                           ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.c:67:12: error: a parameter list without types is only allowed in a function definition
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:74:45: note: expanded from macro 'path_umount'
+#define path_umount                 KSU_SYM(path_umount)
+                                            ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:104:5: error: implicit declaration of function 'KSU_SYM' [-Werror,-Wimplicit-function-declaration]
+    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:96:37: note: expanded from macro 'strncpy_from_user_nofault'
+#define strncpy_from_user_nofault   KSU_SYM(strncpy_from_user_nofault)
+                                    ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:24:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/selinux/selinux.h:34:5: error: function cannot return function type 'int (void *, u64)' (aka 'int (void *, unsigned long long)')
+int handle_sepolicy(void __user *user_data, u64 data_len);
+    ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:114:61: note: expanded from macro 'handle_sepolicy'
+#define handle_sepolicy                              KSU_SYM(handle_sepolicy)
+                                                            ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:24:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/selinux/selinux.h:34:5: error: a parameter list without types is only allowed in a function definition
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:114:62: note: expanded from macro 'handle_sepolicy'
+#define handle_sepolicy                              KSU_SYM(handle_sepolicy)
+                                                             ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:27:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/selinux_hide.h:6:6: error: function cannot return function type 'void ()'
+void ksu_selinux_hide_drop_backup_if_unused();
+     ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:117:61: note: expanded from macro 'ksu_selinux_hide_drop_backup_if_unused'
+#define ksu_selinux_hide_drop_backup_if_unused       KSU_SYM(ksu_selinux_hide_drop_backup_if_unused)
+                                                            ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:27:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/selinux_hide.h:6:6: error: a parameter list without types is only allowed in a function definition
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:117:62: note: expanded from macro 'ksu_selinux_hide_drop_backup_if_unused'
+#define ksu_selinux_hide_drop_backup_if_unused       KSU_SYM(ksu_selinux_hide_drop_backup_if_unused)
+                                                             ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:27:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/selinux_hide.h:7:6: error: function cannot return function type 'void ()'
+void ksu_selinux_hide_handle_second_stage();
+     ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:116:61: note: expanded from macro 'ksu_selinux_hide_handle_second_stage'
+#define ksu_selinux_hide_handle_second_stage         KSU_SYM(ksu_selinux_hide_handle_second_stage)
+                                                            ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:27:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/selinux_hide.h:7:6: error: a parameter list without types is only allowed in a function definition
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:116:62: note: expanded from macro 'ksu_selinux_hide_handle_second_stage'
+#define ksu_selinux_hide_handle_second_stage         KSU_SYM(ksu_selinux_hide_handle_second_stage)
+                                                             ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:27:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/selinux_hide.h:8:6: error: function cannot return function type 'void ()'
+void ksu_selinux_hide_handle_post_fs_data();
+     ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:115:61: note: expanded from macro 'ksu_selinux_hide_handle_post_fs_data'
+#define ksu_selinux_hide_handle_post_fs_data         KSU_SYM(ksu_selinux_hide_handle_post_fs_data)
+                                                            ^
+In file included from /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.c:27:
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/selinux_hide.h:8:6: error: a parameter list without types is only allowed in a function definition
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:115:62: note: expanded from macro 'ksu_selinux_hide_handle_post_fs_data'
+#define ksu_selinux_hide_handle_post_fs_data         KSU_SYM(ksu_selinux_hide_handle_post_fs_data)
+                                                             ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:104:30: error: called object type 'int' is not a function or function pointer/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.c
+:71:15    strncpy_from_user_nofault(path, *filename_user, sizeof(path));:
+     ~~~~~~~~~~~~~~~~~~~~~~~~~^error
+: use of undeclared identifier 'path_umount'; did you mean 'may_umount'?
+    int err = path_umount(path, flags);/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c
+:              ^107
+:/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h34::74: 45error::  called object type 'int' is not a function or function pointernote: 
+expanded from macro 'path_umount'
+        old_cred = override_creds(ksu_cred);
+#define path_umount                 KSU_SYM(path_umount)                   ~~~~~~~~~~~~~~^
+
+                                            ^
+./include/linux/fs.h:2497:12/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c: :note113: :'may_umount' declared here
+25:extern int may_umount(struct vfsmount *); 
+error           ^: 
+called object type 'int' is not a function or function pointer
+            revert_creds(old_cred);
+            ~~~~~~~~~~~~^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:117:25: error: called object type 'int' is not a function or function pointer
+            revert_creds(old_cred);
+            ~~~~~~~~~~~~^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:139:5: error: implicit declaration of function 'KSU_SYM' [-Werror,-Wimplicit-function-declaration]
+    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:96:37: note: expanded from macro 'strncpy_from_user_nofault'
+#define strncpy_from_user_nofault   KSU_SYM(strncpy_from_user_nofault)
+                                    ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:139:30: error: called object type 'int' is not a function or function pointer
+    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:142:34: error: called object type 'int' is not a function or function pointer
+        old_cred = override_creds(ksu_cred);
+                   ~~~~~~~~~~~~~~^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:148:25: error: called object type 'int' is not a function or function pointer
+            revert_creds(old_cred);
+            ~~~~~~~~~~~~^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:152:25: error: called object type 'int' is not a function or function pointer
+            revert_creds(old_cred);
+            ~~~~~~~~~~~~^
+5 errors/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c generated.
+:204:16: error: implicit declaration of function 'KSU_SYM' [-Werror,-Wimplicit-function-declaration]
+    old_cred = override_creds(ksu_cred);
+               ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/infra/ksu_syms_compat.h:53:37: note: expanded from macro 'override_creds'
+#define override_creds              KSU_SYM(override_creds)
+                                    ^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:204:30:8 errors generated.
+ error: called object type 'int' is not a function or function pointer
+    old_cred = override_creds(ksu_cred);
+               ~~~~~~~~~~~~~~^
+/home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.c:206:17: error: called object type 'int' is not a function or function pointer
+    revert_creds(old_cred);
+    ~~~~~~~~~~~~^
+13 errors generated.
 make[1]: *** [scripts/Makefile.build:285: /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/kernel_umount.o] Error 1
-1 error generated.
-1 error generated.
+make[1]: *** Waiting for unfinished jobs....
 make[1]: *** [scripts/Makefile.build:285: /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/feature/sucompat.o] Error 1
 make[1]: *** [scripts/Makefile.build:285: /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel/core/init.o] Error 1
 make: *** [Makefile:2024: /home/runner/work/oppo-ghostlock/oppo-ghostlock/KernelSU/kernel] Error 2

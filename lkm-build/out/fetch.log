@@ -14,16 +14,16 @@ DOWNLOAD kml.tgz http=200 size=192054564 url=https://codeload.github.com/oppo-so
 + echo 'DOWNLOAD mods.tgz http=200 size=43114899 url=https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2'
 DOWNLOAD mods.tgz http=200 size=43114899 url=https://codeload.github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
 + try https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2 cmn.tgz
-++ curl -fL --retry 8 --retry-delay 5 --retry-all-errors -w '%{http_code}' -o cmn.tgz https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
 ++ tail -1
+++ curl -fL --retry 8 --retry-delay 5 --retry-all-errors -w '%{http_code}' -o cmn.tgz https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
 + code=200
 ++ stat -c%s cmn.tgz
 + echo 'DOWNLOAD cmn.tgz http=200 size=188579793 url=https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2'
 DOWNLOAD cmn.tgz http=200 size=188579793 url=https://codeload.github.com/oppo-source/android_kernel_common_oppo_sm8475/tar.gz/refs/heads/oppo/sm8475_b_16.0.0_find_n2
 + ls -l cmn.tgz kml.tgz mods.tgz
--rw-r--r-- 1 runner runner 188579793 Oct  6 07:47 cmn.tgz
--rw-r--r-- 1 runner runner 192054564 Oct  6 07:46 kml.tgz
--rw-r--r-- 1 runner runner  43114899 Oct  6 07:46 mods.tgz
+-rw-r--r-- 1 runner runner 188579793 Oct  6 07:56 cmn.tgz
+-rw-r--r-- 1 runner runner 192054564 Oct  6 07:55 kml.tgz
+-rw-r--r-- 1 runner runner  43114899 Oct  6 07:55 mods.tgz
 + mkdir -p kernel
 + tar -xzf kml.tgz -C kernel --strip-components=1
 + '[' -s mods.tgz ']'

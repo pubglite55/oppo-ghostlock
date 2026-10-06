@@ -35,6 +35,27 @@
 
 #include <linux/types.h>
 
+/* ★★★ 这三个是内核实测点名的最后 3 个 Unknown symbol（err -2）：
+ *     kernelsu: Unknown symbol ksu_selinux_hide_handle_post_fs_data (err -2)
+ *     kernelsu: Unknown symbol ksu_selinux_hide_drop_backup_if_unused (err -2)
+ *     kernelsu: Unknown symbol ksu_selinux_hide_handle_second_stage (err -2)
+ *   它们是【KernelSU 自己】的函数（kernel/feature/selinux_hide.h:6-8 声明），
+ *   被 kernel/runtime/boot_event.c 与 kernel/runtime/ksud_integration.c 调用；
+ *   原来的存根只提供了 init/_exit ⇒ 这三处就成了无法解析的外部符号 ✗。
+ *   签名是 void f(void)，补空实现即可 —— 不需要任何内核导出 ✓
+ *   （只要 shim 把其余 46 个内核符号在运行时解析掉，就只差这三个了） */
+void ksu_selinux_hide_drop_backup_if_unused(void)
+{
+}
+
+void ksu_selinux_hide_handle_second_stage(void)
+{
+}
+
+void ksu_selinux_hide_handle_post_fs_data(void)
+{
+}
+
 void ksu_selinux_hide_init(void)
 {
 }

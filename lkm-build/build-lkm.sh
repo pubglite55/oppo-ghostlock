@@ -302,18 +302,20 @@ echo "OK"
 #   ③ call_usermodehelper_setup/exec（本来就导出）只跑【一句 /system/bin/insmod -f <ko>】
 #   然后 return -E2BIG 让内核把本模块卸载（不留痕迹）
 echo "== build minimal late-loader (ksu_min_load.ko, no ksud storm) =="
-ML="$(dirname "$0")/minload"
+# ★ 必须用【绝对路径】：脚本前面 cd 进了 $KSRC ⇒ 相对路径（$(dirname $0)/…）会失效 ✗
+#   （实测：CI 里报 "minload dir missing: lkm-build/minload" 就是这个原因 ✓）
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+ML="$ROOT/minload"
 if [ -d "$ML" ]; then
   if make -j"$(nproc)" -C "$ML" KDIR="$KSRC" > /tmp/minload.log 2>&1; then
     if [ -f "$ML/ksu_min_load.ko" ]; then
-      cp -f "$ML/ksu_min_load.ko" ./ksu_min_load.ko
-      # ★ 必须同时放进 out/ —— 工作流的"收集产物"只捡 out/ 下的东西，
-      #   否则 CI 编出来了也不会提交回仓库（实测：第一次就漏了 ✗）
-      cp -f "$ML/ksu_min_load.ko" "$(dirname "$0")/out/ksu_min_load.ko"
-      echo "== ksu_min_load.ko: $(stat -c %s ./ksu_min_load.ko) bytes =="
-      tr -c '[:print:]' '\n' < ./ksu_min_load.ko | grep -m1 '^vermagic=' || true
+      cp -f "$ML/ksu_min_load.ko" "$ROOT/ksu_min_load.ko"
+      # ★ 必须同时放进 out/ —— 工作流的"收集产物"只捡 out/ 下的东西
+      cp -f "$ML/ksu_min_load.ko" "$ROOT/out/ksu_min_load.ko"
+      echo "== ksu_min_load.ko: $(stat -c %s "$ROOT/ksu_min_load.ko") bytes =="
+      tr -c '[:print:]' '\n' < "$ROOT/ksu_min_load.ko" | grep -m1 '^vermagic=' || true
       echo "-- its undefined symbols（应极少、且都在内核里存在）--"
-      llvm-nm -u ./ksu_min_load.ko 2>/dev/null | head -25 || true
+      llvm-nm -u "$ROOT/ksu_min_load.ko" 2>/dev/null | head -25 || true
     else
       echo "  !! ksu_min_load.ko not produced"; tail -20 /tmp/minload.log
     fi

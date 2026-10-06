@@ -42,6 +42,29 @@
 #include <linux/unistd.h>
 #include <linux/task_work.h>
 #include <linux/version.h>
+/* ★ 关键：凡是【声明着我要宏化的符号】的头，都必须在这里【先】包含进来。
+ * 否则那些声明会在宏定义【之后】才被解析 ⇒ 被宏展开搅成
+ * "expected identifier or '('"（CI 实测：path_umount、__flush_dcache_area）。
+ * 有 include guard 的头的重复包含是 no-op ✓，所以多列不亏。 */
+#include <asm/cacheflush.h>
+#include <asm/fixmap.h>
+#include <asm/memory.h>
+#include <asm/pgtable.h>
+#include <linux/kallsyms.h>
+#include <linux/irqflags.h>
+#include <linux/kthread.h>
+#include <linux/nsproxy.h>
+#include <linux/pid_namespace.h>
+#include <linux/tracepoint.h>
+#include <linux/jump_label.h>
+#include <linux/uidgid.h>
+#include <linux/atomic.h>
+#include <linux/uaccess.h>
+#include <linux/thread_info.h>
+#include <linux/seccomp.h>
+#include <linux/fs_struct.h>
+#include <linux/mount.h>
+#include <linux/fdtable.h>
 
 void *ksu_sym_ptr(const char *name);
 

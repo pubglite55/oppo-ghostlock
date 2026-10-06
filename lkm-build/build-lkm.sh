@@ -86,7 +86,22 @@ grep -n '^CONFIG_LOCALVERSION' .config | head -2
 
 make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
-# ── ★ 生成内核符号表 Module.symvers（否则 modpost 会跳过未解析符号检查）──────────
+# ── ★★★ 修复 ENOENT 的第一根源：SCM 版本必须与设备内核【逐字一致】─────────────
+# 设备 uname -r = 5.10.236-android12-9-o-g74d132f4467a  ⇒ 内核 SCM 串 = g74d132f4467a
+# 而我的模块出厂带 .modinfo scmversion=g932014ab5b2c-dirty ✗（我的源码树 git 尾巴 + -dirty）
+# 设备内核 CONFIG_MODULE_SCMVERSION=y ⇒ 装载时比对 SCM 版本 ⇒ 不一致即 -ENOENT。
+# 修法：在编模块前把 include/config/scmversion 钉成内核那个值（setlocalversion 会读它）。
+SCM_VER="${SCM_VER:-g74d132f4467a}"
+mkdir -p include/config
+printf '%s' "$SCM_VER" > include/config/scmversion
+echo "== scmversion pinned -> $(cat include/config/scmversion)（必须等于设备 uname -r 的 g 尾巴）"
+
+# ── ★★★ 修复 ENOENT 的第二根源：__versions 全空（modversions CRC 表缺失）───────
+# 实测证据（2026-10-06）：新 .ko 的 __versions 段 size=0，而设备内核
+#   CONFIG_MODVERSIONS=y + CONFIG_MODULE_SCMVERSION=y + CONFIG_TRIM_UNUSED_KSYMS=y
+#   ⇒ 每个符号都要查 CRC、还要 SCM 版本逐字一致 ⇒ 缺一即 finit_module 返回 -ENOENT。
+# 根因：本地/CI 都没有 Module.symvers ⇒ modpost 跳过符号版本生成 ⇒ __versions 空。
+# 修法：必须先把内核本体编出来拿 Module.symvers，再编模块；并断言 __versions 非空。
 # 症状链（实测）：没有 Module.symvers/vmlinux 符号 ⇒
 #   "WARNING: Symbol version dump "Module.symvers" is missing."
 #   "WARNING: modpost: Symbol info of vmlinux is missing. Unresolved symbol check will be entirely skipped."
@@ -156,6 +171,26 @@ if grep -vE '^[[:space:]]*(\*|/\*|//)' "$KSU/kernel/selinux/sepolicy.c" "$KSU/ke
   echo "  !! stubs did not take (SELinux internals still referenced in CODE)"; exit 1
 fi
 echo "  selinux.c untouched (clean, needed for root); sepolicy.c/rules.c stubbed"
+
+echo "== ★ 接入 ksu_syms_compat（non-GKI 运行时符号解析）=="
+# 为什么：厂商内核不导出 49 个核心符号，内核实测点名：
+#   "kernelsu: Unknown symbol commit_creds (err -2)" ×49 ⇒ finit_module 返回 -ENOENT。
+# 设备内核具备 CONFIG_KPROBES=y + CONFIG_KALLSYMS_ALL=y ⇒ 可在运行时解析。
+# 关键自举：KernelSU 自带的 infra/symbol_resolver.c 直接调用 kallsyms_lookup_name，
+# 而它本身没被导出 ⇒ 必须先用 kprobe 拿到它（register_kprobe 内部按名字查，不受 EXPORT 限制）。
+cp -f "$STUBS/ksu_syms_compat.c" "$KSU/kernel/infra/ksu_syms_compat.c"
+cp -f "$STUBS/ksu_syms_compat.h" "$KSU/kernel/infra/ksu_syms_compat.h"
+KB="$KSU/kernel/Kbuild"
+if ! grep -q 'infra/ksu_syms_compat.o' "$KB"; then
+  printf '\nkernelsu-objs += infra/ksu_syms_compat.o\n' >> "$KB"
+fi
+if ! grep -q 'ksu_syms_compat.h' "$KB"; then
+  printf '\nccflags-y += -include $(src)/infra/ksu_syms_compat.h\n' >> "$KB"
+fi
+echo "  Kbuild 尾部："; tail -4 "$KB"
+MACROS=$(grep -cE '^#define[[:space:]]+\w+[[:space:]]+KSU_SYM' "$KSU/kernel/infra/ksu_syms_compat.h")
+echo "  符号宏数 = $MACROS（应为 49）"
+[ "$MACROS" = "49" ] || { echo "  !! 宏数不是 49，shim 不完整"; exit 1; }
 
 echo "== build kernelsu module (external module against the vendor tree) =="
 # KernelSU's kernel/Kbuild builds kernelsu.o under obj-$(CONFIG_KSU); passing CONFIG_KSU=m on

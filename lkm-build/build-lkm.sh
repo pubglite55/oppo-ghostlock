@@ -290,3 +290,33 @@ ls -l "$KSU/kernel/kernelsu.ko" 2>/dev/null || {
 echo "== sanity: does the module embed the vendor kernel's build id? =="
 llvm-nm --defined-only "$KSU/kernel/kernelsu.ko" 2>/dev/null | head -5 || true
 echo "OK"
+
+# ── ★★★ 极简装载器 ksu_min_load.ko（绕开 ksud 进程风暴）────────────────────────
+# 动机（器件侧实测）：exploit 走到装载段会拉起 ksud 的进程风暴 ⇒ 厂商内核
+#   "BUG: workqueue lockup - pool cpus=… nice=-20 stuck for 49s/57s/88s" ⇒ panic
+#   （CPU 6 / 4 / 不钉 三种配置均复现）；而【绕开 ksud 的那一发 crash4.log 归零】✓
+#   ⇒ 风暴就是 panic-on-wq-lockup 的触发源。
+# 本模块只做三件事、不制造风暴（详见 lkm-build/minload/ksu_min_load.c）：
+#   ① kprobe 取 kallsyms_lookup_name（自举）
+#   ② WRITE_ONCE(*selinux_state, false) ⇒ permissive
+#   ③ call_usermodehelper_setup/exec（本来就导出）只跑【一句 /system/bin/insmod -f <ko>】
+#   然后 return -E2BIG 让内核把本模块卸载（不留痕迹）
+echo "== build minimal late-loader (ksu_min_load.ko, no ksud storm) =="
+ML="$(dirname "$0")/minload"
+if [ -d "$ML" ]; then
+  if make -j"$(nproc)" -C "$ML" KDIR="$KSRC" > /tmp/minload.log 2>&1; then
+    if [ -f "$ML/ksu_min_load.ko" ]; then
+      cp -f "$ML/ksu_min_load.ko" ./ksu_min_load.ko
+      echo "== ksu_min_load.ko: $(stat -c %s ./ksu_min_load.ko) bytes =="
+      tr -c '[:print:]' '\n' < ./ksu_min_load.ko | grep -m1 '^vermagic=' || true
+      echo "-- its undefined symbols（应极少、且都在内核里存在）--"
+      llvm-nm -u ./ksu_min_load.ko 2>/dev/null | head -25 || true
+    else
+      echo "  !! ksu_min_load.ko not produced"; tail -20 /tmp/minload.log
+    fi
+  else
+    echo "  !! minload build failed - tail:"; tail -30 /tmp/minload.log
+  fi
+else
+  echo "  !! minload dir missing: $ML"
+fi

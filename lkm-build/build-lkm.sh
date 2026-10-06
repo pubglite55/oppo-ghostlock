@@ -302,9 +302,11 @@ echo "OK"
 #   ③ call_usermodehelper_setup/exec（本来就导出）只跑【一句 /system/bin/insmod -f <ko>】
 #   然后 return -E2BIG 让内核把本模块卸载（不留痕迹）
 echo "== build minimal late-loader (ksu_min_load.ko, no ksud storm) =="
-# ★ 必须用【绝对路径】：脚本前面 cd 进了 $KSRC ⇒ 相对路径（$(dirname $0)/…）会失效 ✗
-#   （实测：CI 里报 "minload dir missing: lkm-build/minload" 就是这个原因 ✓）
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+# ★ 必须用【cd 之前】就取好的绝对路径：脚本开头有 STUBS="$(cd "$(dirname "$0")" && pwd)/stubs"
+#   它的 dirname 就是仓库里的 lkm-build ✓
+#   （实测两次翻车：先用了 $(dirname $0)/minload ⇒ cd 后 "minload dir missing" ✗；
+#     再用了 $(cd $(dirname $0) && pwd) ⇒ cd 后 "cd: lkm-build: No such file or directory" ✗）
+ROOT="$(dirname "$STUBS")"
 ML="$ROOT/minload"
 if [ -d "$ML" ]; then
   if make -j"$(nproc)" -C "$ML" KDIR="$KSRC" > /tmp/minload.log 2>&1; then

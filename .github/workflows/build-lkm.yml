@@ -138,7 +138,14 @@ jobs:
           find . -name 'kernelsu.ko' -not -path './kernel/*' -printf '%p %s bytes\n' || true
           KO=$(find . -name 'kernelsu.ko' | head -1)
           echo "KO=$KO"
-          if [ -n "$KO" ]; then cp "$KO" lkm-build/out/kernelsu.ko; fi
+          if [ -n "$KO" ]; then
+            # 产物本来就在目标位置时不要 cp（会 "are the same file" 退出码 1，把整个 run 判死）
+            if [ "$(realpath "$KO")" != "$(realpath lkm-build/out/kernelsu.ko 2>/dev/null || echo x)" ]; then
+              cp "$KO" lkm-build/out/kernelsu.ko
+            else
+              echo "already at lkm-build/out/kernelsu.ko - skip cp"
+            fi
+          fi
           if [ -f kernelsu.minimal.ko ]; then cp -f kernelsu.minimal.ko lkm-build/out/kernelsu.minimal.ko; fi
           ls -l lkm-build/out/ || true
 

@@ -32,7 +32,6 @@
 #include <linux/nsproxy.h>
 #include <linux/ns_common.h>
 #include <linux/cred.h>
-#include <linux/groups.h>
 #include <linux/seccomp.h>
 #include <linux/security.h>
 #include <linux/lsm_hooks.h>

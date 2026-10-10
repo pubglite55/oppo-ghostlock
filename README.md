@@ -1,9 +1,12 @@
 # oppofindN2-ghostlock
 
+<p align="center">
+  <a href="https://github.com/pubglite55/oppofindN2-ghostlock/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/pubglite55/oppofindN2-ghostlock?style=flat-square&label=Stars"></a>
+  <a href="https://github.com/pubglite55/oppofindN2-ghostlock/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/pubglite55/oppofindN2-ghostlock?style=flat-square&label=Last%20Commit"></a>
+  <a href="https://github.com/pubglite55/oppofindN2-ghostlock/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/pubglite55/oppofindN2-ghostlock?style=flat-square&label=License"></a>
+</p>
 GhostLock CVE-2026-43499 — OPPO Find N2 Linux 内核提权研究
 
-[![Version](https://img.shields.io/badge/version-1.0--research-blue)](https://github.com/pubglite55/oppofindN2-ghostlock)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## 项目概述
 
@@ -33,28 +36,33 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 ### 编译部署
 
 
-#### 1. 克隆仓库
-```
-git clone https://github.com/pubglite55/oppofindN2-ghostlock.git
-cd oppofindN2-ghostlock
-```
-#### 2. 设置 NDK 路径
-```
-export NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
-```
-#### 3. 编译 exploit
-```
-cd exploit/
-make clean && make NDK=$NDK
-```
-#### 4. 推送到设备
-```
-adb push preload.so /data/local/tmp/
-```
-#### 5. 运行
-```
-adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
-```
+1. **克隆仓库**
+
+  ```
+  git clone https://github.com/pubglite55/oppofindN2-ghostlock.git
+  cd oppofindN2-ghostlock
+  ```
+2. **设置 NDK 路径**
+
+  ```
+  export NDK=/usr/local/Caskroom/android-ndk/29/AndroidNDK14206865.app/Contents/NDK
+  ```
+3. **编译 exploit**
+
+  ```
+  cd exploit/
+  make clean && make NDK=$NDK
+  ```
+4. **推送到设备**
+
+  ```
+  adb push preload.so /data/local/tmp/
+  ```
+5. **运行**
+
+  ```
+  adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
+  ```
 
 ## 仓库结构
 

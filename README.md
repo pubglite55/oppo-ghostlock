@@ -1,8 +1,8 @@
-# oppo-ghostlock
+# oppofindN2-ghostlock
 
 GhostLock CVE-2026-43499 — OPPO Find N2 Linux 内核提权研究
 
-[![Version](https://img.shields.io/badge/version-1.0--research-blue)](https://github.com/pubglite55/oppo-ghostlock)
+[![Version](https://img.shields.io/badge/version-1.0--research-blue)](https://github.com/pubglite55/oppofindN2-ghostlock)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## 项目概述
@@ -35,8 +35,8 @@ GhostLock (CVE-2026-43499) 是一个影响 Linux 2.6.39 至 7.1-rc1 的内核栈
 
 #### 1. 克隆仓库
 ```
-git clone https://github.com/pubglite55/oppo-ghostlock.git
-cd oppo-ghostlock
+git clone https://github.com/pubglite55/oppofindN2-ghostlock.git
+cd oppofindN2-ghostlock
 ```
 #### 2. 设置 NDK 路径
 ```
@@ -59,7 +59,7 @@ adb shell 'LD_PRELOAD=/data/local/tmp/preload.so /system/bin/ls /dev/null' 2>&1
 ## 仓库结构
 
 ```
-oppo-ghostlock/
+oppofindN2-ghostlock/
 ├── exploit/
 │   ├── src/
 │   │   ├── main.c              # 主入口，GhostLock 触发
